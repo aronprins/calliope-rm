@@ -44,6 +44,7 @@ No database. No auth system. No admin panel. The portal reads and writes through
 | `/api/submit` | POST | Customer submits a new issue (multipart, supports image uploads) |
 | `/api/board` | GET | Returns issues with the `public` label, grouped into kanban columns |
 | `/api/comments?issue=N` | GET | Returns customer-visible comments on issue N (team comments + any comment with the `<!-- public -->` marker) |
+| `/api/status?numbers=N,N` | GET | Returns `{ number, state, reason }` for up to 20 issue numbers — used by the "Your submissions" tracker so customers can see when an issue was declined or closed without ever being made public |
 
 **Four label namespaces** do the work:
 
@@ -245,6 +246,13 @@ server {
   location = /api/comments {
     fastcgi_pass unix:/run/php/php8.2-fpm.sock;
     fastcgi_param SCRIPT_FILENAME /var/www/calliope/comments.php;
+    include fastcgi_params;
+  }
+
+  # Status endpoint
+  location = /api/status {
+    fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME /var/www/calliope/status.php;
     include fastcgi_params;
   }
 
