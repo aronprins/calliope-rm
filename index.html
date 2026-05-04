@@ -1242,10 +1242,12 @@
   confirmOk.addEventListener('click', () => settleConfirm(true));
   confirmCancel.addEventListener('click', () => settleConfirm(false));
   confirmBg.addEventListener('click', (e) => { if (e.target === confirmBg) settleConfirm(false); });
+  // Escape always cancels. Enter is left to the browser so it activates
+  // whichever button currently has focus — defaulting to Cancel keeps
+  // accidental keyboard presses from firing destructive actions.
   document.addEventListener('keydown', (e) => {
     if (confirmBg.hidden) return;
     if (e.key === 'Escape') { e.preventDefault(); settleConfirm(false); }
-    if (e.key === 'Enter')  { e.preventDefault(); settleConfirm(true); }
   });
 
   // ─── THEME ───────────────────────────────────────────────────────
