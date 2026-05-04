@@ -6,6 +6,8 @@ Calliope RM is a customer-facing roadmap and feedback portal that runs entirely 
 
 No database. No auth system. No admin panel. The portal reads and writes through a thin proxy — drop it in front of any repo and you have a public roadmap in an afternoon.
 
+<img width="1162" height="1162" alt="Screenshot 2026-05-04 at 10 55 53" src="https://github.com/user-attachments/assets/d70a04d0-7b8f-41c5-9970-c3d1bf5c104e" />
+
 ## Contents
 
 - [How it works](#how-it-works)
