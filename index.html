@@ -759,6 +759,20 @@
   }
   .modal-close:hover { color: var(--ink); background: var(--parchment); }
 
+  /* ─── Confirm modal ─────────────────────────────── */
+  #confirm-modal { align-items: center; padding: 16px; }
+  .modal.is-confirm {
+    max-width: 420px; padding: 24px;
+  }
+  .modal.is-confirm h2 { font-size: 17px; margin-bottom: 8px; }
+  .modal.is-confirm p {
+    font-size: 13.5px; color: var(--ash); line-height: 1.6;
+    margin: 0 0 18px;
+  }
+  .modal.is-confirm .actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
+
   .modal-link {
     display: inline-flex; align-items: center; gap: 6px;
     margin-left: auto;
@@ -1147,6 +1161,18 @@
   © <span id="foot-year"></span> Calliope RM
 </footer>
 
+<!-- ─── Confirm modal ────────────────────────────────── -->
+<div class="modal-bg" id="confirm-modal" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal is-confirm">
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-message"></p>
+    <div class="actions">
+      <button type="button" class="secondary" id="confirm-cancel"></button>
+      <button type="button" class="primary" id="confirm-ok"></button>
+    </div>
+  </div>
+</div>
+
 <!-- ─── Card detail modal ─────────────────────────────── -->
 <div class="modal-bg" id="modal" hidden role="dialog" aria-modal="true">
   <div class="modal">
@@ -1182,6 +1208,43 @@
 
   // ─── FOOTER YEAR ─────────────────────────────────────────────────
   document.getElementById('foot-year').textContent = new Date().getFullYear();
+
+  // ─── CONFIRM MODAL ───────────────────────────────────────────────
+  // Promise-based replacement for window.confirm — returns true on OK,
+  // false on cancel / backdrop / Escape. Used everywhere we need a
+  // yes/no prompt so we never fall back to the native browser dialog.
+  const confirmBg     = document.getElementById('confirm-modal');
+  const confirmTitle  = document.getElementById('confirm-title');
+  const confirmMsg    = document.getElementById('confirm-message');
+  const confirmOk     = document.getElementById('confirm-ok');
+  const confirmCancel = document.getElementById('confirm-cancel');
+  let confirmResolver = null;
+  let confirmPrevFocus = null;
+
+  function confirmModal({ title = 'Are you sure?', message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel' } = {}) {
+    confirmTitle.textContent = title;
+    confirmMsg.textContent = message;
+    confirmOk.textContent = confirmLabel;
+    confirmCancel.textContent = cancelLabel;
+    confirmPrevFocus = document.activeElement;
+    confirmBg.hidden = false;
+    confirmCancel.focus();
+    return new Promise((resolve) => { confirmResolver = resolve; });
+  }
+  function settleConfirm(value) {
+    if (confirmResolver) { confirmResolver(value); confirmResolver = null; }
+    confirmBg.hidden = true;
+    if (confirmPrevFocus && confirmPrevFocus.focus) confirmPrevFocus.focus();
+    confirmPrevFocus = null;
+  }
+  confirmOk.addEventListener('click', () => settleConfirm(true));
+  confirmCancel.addEventListener('click', () => settleConfirm(false));
+  confirmBg.addEventListener('click', (e) => { if (e.target === confirmBg) settleConfirm(false); });
+  document.addEventListener('keydown', (e) => {
+    if (confirmBg.hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); settleConfirm(false); }
+    if (e.key === 'Enter')  { e.preventDefault(); settleConfirm(true); }
+  });
 
   // ─── THEME ───────────────────────────────────────────────────────
   const themeKey = 'calliope-theme';
@@ -1759,8 +1822,14 @@
     wrap.hidden = false;
   }
 
-  document.getElementById('btn-clear-submissions').addEventListener('click', () => {
-    if (!confirm('Forget the list of your submissions on this device? They stay in our system regardless.')) return;
+  document.getElementById('btn-clear-submissions').addEventListener('click', async () => {
+    const ok = await confirmModal({
+      title: 'Clear your submissions list?',
+      message: "This only forgets the list on this device — your submissions stay in our system and the team will still get back to you.",
+      confirmLabel: 'Clear list',
+      cancelLabel: 'Keep it',
+    });
+    if (!ok) return;
     try { localStorage.removeItem(SUB_KEY); } catch {}
     renderYourSubmissions();
   });
