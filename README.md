@@ -1,8 +1,10 @@
-# Customer Feedback Portal
+# Calliope RM
 
-A lightweight customer-facing feedback portal that runs entirely on **GitHub Issues + Labels** as its database. Customers submit issues and view a public roadmap (kanban board) without ever needing a GitHub account, while your source code stays in a private repository.
+> Named after **Calliope** — the Greek Muse of eloquence and epic poetry, eldest of the nine Muses. She was the voice that made stories worth following from beginning to end. Calliope RM does the same for your product roadmap.
 
-No database. No auth system. No admin panel. Your team works in GitHub like normal; the portal reads and writes through a thin proxy.
+Calliope RM is a customer-facing roadmap and feedback portal that runs entirely on **GitHub Issues + Labels**: customers submit issues, see what's planned, in progress, and shipped, and your team works in GitHub like normal.
+
+No database. No auth system. No admin panel. The portal reads and writes through a thin proxy — drop it in front of any repo and you have a public roadmap in an afternoon.
 
 ## Contents
 
@@ -489,4 +491,6 @@ GitHub's `/issues` endpoint returns PRs too; the Worker filters them with `if (!
 ---
 
 **Stack:** GitHub Issues + Labels (data) · Cloudflare Workers *or* nginx + PHP-FPM (proxy) · Vanilla HTML/CSS/JS (frontend)
-**Files:** `index.html`, `worker.js`, `submit.php`, `board.php`
+**Files:** `index.html`, `worker.js`, `submit.php`, `board.php`, `comments.php`
+
+*Calliope was the eldest daughter of Zeus and Mnemosyne — goddess of memory — and the patron of epic narrative. Every roadmap is a story your customers want to follow from beginning to end.*
