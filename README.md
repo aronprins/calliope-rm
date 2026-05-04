@@ -50,13 +50,14 @@ No database. No auth system. No admin panel. Your team works in GitHub like norm
 
 Two backends are provided. Pick one based on where you'd rather run it.
 
-| | **Cloudflare Worker** (`worker.js`) | **VPS, nginx + PHP-FPM** (`submit.php`) |
+| | **Cloudflare Worker** (`worker.js`) | **VPS, nginx + PHP-FPM** (`submit.php` + `board.php`) |
 | --- | --- | --- |
 | Hosting | Cloudflare's edge | Your VPS |
-| Image uploads | Not supported in this Worker | Supported (WebP, on-disk) |
+| Image uploads | Not supported | Supported (WebP, on-disk) |
 | Cost | Free tier covers 100k req/day | VPS only |
-| Setup | `wrangler` CLI + secrets | Drop in a PHP file + env vars |
+| Setup | `wrangler` CLI + secrets | Drop in two PHP files + env vars |
 | Storage | Stateless | Uploaded images live on the VPS |
+| Caching | Cloudflare cache API (60s) | File cache in temp dir (60s) |
 
 The PHP path is the one to choose if you want screenshots embedded in your issues.
 
@@ -154,7 +155,7 @@ sudo apt install nginx php-fpm php-gd php-curl
 
 ```bash
 sudo mkdir -p /var/www/calliope
-sudo cp submit.php /var/www/calliope/
+sudo cp submit.php board.php /var/www/calliope/
 sudo mkdir -p /var/lib/calliope/uploads
 sudo chown -R www-data:www-data /var/lib/calliope/uploads
 ```
@@ -196,6 +197,13 @@ server {
     include fastcgi_params;
   }
 
+  # Board endpoint
+  location = /api/board {
+    fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME /var/www/calliope/board.php;
+    include fastcgi_params;
+  }
+
   # Public uploads
   location /uploads/ {
     alias /var/lib/calliope/uploads/;
@@ -215,8 +223,6 @@ In `portal.html`:
 ```js
 const ENDPOINT = 'https://acme.com'; // your domain — submit.php is at /api/submit
 ```
-
-> **Heads up:** The `GET /api/board` endpoint is currently only implemented in `worker.js`. If you're going pure-PHP, you'll want to port `handleBoard` from `worker.js` to a `board.php` (straightforward — it's a single GitHub API call plus column grouping).
 
 ### 8. Test
 
@@ -392,10 +398,9 @@ GitHub's `/issues` endpoint returns PRs too; the Worker filters them with `if (!
 - **Public comments:** surface comments from team members (or those marked with a `public-comment` label) in the modal.
 - **"Me too" upvoting:** post a `+1` reaction via the backend. Tracking just totals needs no storage; tracking *who* voted does.
 - **Changelog feed:** generate an RSS or JSON feed of recently-shipped issues.
-- **Pure-PHP `board.php`:** port `handleBoard` from `worker.js` so the VPS path doesn't need a Worker for the read side.
 - **GitHub Projects v2 integration:** swap label-driven status for a Project board as the source of truth via the GraphQL API.
 
 ---
 
 **Stack:** GitHub Issues + Labels (data) · Cloudflare Workers *or* nginx + PHP-FPM (proxy) · Vanilla HTML/CSS/JS (frontend)
-**Files:** `portal.html`, `worker.js`, `submit.php`
+**Files:** `portal.html`, `worker.js`, `submit.php`, `board.php`
