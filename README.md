@@ -44,6 +44,7 @@ No database. No auth system. No admin panel. The portal reads and writes through
 | `/api/submit` | POST | Customer submits a new issue (multipart, supports image uploads) |
 | `/api/board` | GET | Returns issues with the `public` label, grouped into kanban columns |
 | `/api/comments?issue=N` | GET | Returns customer-visible comments on issue N (team comments + any comment with the `<!-- public -->` marker) |
+| `/api/status?numbers=N,N` | GET | Returns `{ number, state, reason }` for up to 20 issue numbers — used by the "Your submissions" tracker so customers can see when an issue was declined or closed without ever being made public |
 
 **Four label namespaces** do the work:
 
@@ -192,7 +193,7 @@ sudo apt install nginx php-fpm php-gd php-curl
 
 ```bash
 sudo mkdir -p /var/www/calliope
-sudo cp submit.php board.php comments.php /var/www/calliope/
+sudo cp submit.php board.php comments.php status.php /var/www/calliope/
 sudo mkdir -p /var/lib/calliope/uploads
 sudo chown -R www-data:www-data /var/lib/calliope/uploads
 ```
@@ -202,13 +203,16 @@ sudo chown -R www-data:www-data /var/lib/calliope/uploads
 Edit your php-fpm pool config (e.g. `/etc/php/8.2/fpm/pool.d/www.conf`) and add:
 
 ```ini
-env[GITHUB_TOKEN]   = ghp_your_token_here
-env[GITHUB_OWNER]   = acme-corp
-env[GITHUB_REPO]    = feedback
-env[ALLOWED_ORIGIN] = https://acme.com
-env[UPLOADS_DIR]    = /var/lib/calliope/uploads
-env[UPLOADS_URL]    = https://acme.com/uploads
+env[GITHUB_TOKEN]     = ghp_your_token_here
+env[GITHUB_OWNER]     = acme-corp
+env[GITHUB_REPO]      = feedback
+env[ALLOWED_ORIGIN]   = https://acme.com
+env[UPLOADS_DIR]      = /var/lib/calliope/uploads
+env[UPLOADS_URL]      = https://acme.com/uploads
+env[STATUS_SIGN_KEY]  = a-long-random-secret-string-rotated-occasionally
 ```
+
+`STATUS_SIGN_KEY` is required for `/api/status` and the per-submission HMAC token returned by `/api/submit`. Generate with `openssl rand -hex 32` or similar. **Don't** commit it. Rotating it invalidates all currently-saved submission tokens, which downgrades older entries in customers' "Your submissions" lists to silent "Awaiting triage" (the row still shows, just no live status lookup) — non-destructive but noisy, so rotate sparingly.
 
 Reload php-fpm: `sudo systemctl reload php8.2-fpm`.
 
@@ -245,6 +249,13 @@ server {
   location = /api/comments {
     fastcgi_pass unix:/run/php/php8.2-fpm.sock;
     fastcgi_param SCRIPT_FILENAME /var/www/calliope/comments.php;
+    include fastcgi_params;
+  }
+
+  # Status endpoint
+  location = /api/status {
+    fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME /var/www/calliope/status.php;
     include fastcgi_params;
   }
 

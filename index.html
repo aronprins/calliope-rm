@@ -645,8 +645,19 @@
   .your-submissions .clear:hover { color: var(--ink); background: var(--parchment); }
   .submission-row {
     display: flex; align-items: center; gap: 12px;
-    padding: 10px 0;
+    padding: 10px 4px;
+    margin: 0 -4px;
     border-top: 1px solid var(--stone);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background var(--transition);
+  }
+  .submission-row:hover { background: var(--parchment); }
+  .submission-row:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .submission-row:hover .title.is-link {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--ink) 30%, transparent);
+    text-underline-offset: 0.18em;
   }
   .submission-row:first-of-type { border-top: 0; }
   .submission-row .title {
@@ -660,8 +671,15 @@
     text-decoration-color: color-mix(in srgb, var(--ink) 30%, transparent);
     text-underline-offset: 0.18em;
   }
-  .submission-row .when { font-size: 11.5px; color: var(--ash); flex-shrink: 0; }
-  .submission-row .status { flex-shrink: 0; }
+  .submission-row .when {
+    font-size: 11.5px; color: var(--ash);
+    flex-shrink: 0;
+    line-height: 22px;
+  }
+  .submission-row .status {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center;
+  }
   .status-pill {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 1px 8px; border-radius: 999px;
@@ -682,6 +700,16 @@
   .status-pill.shipped {
     background: var(--mint); color: var(--green-soft);
     border-color: rgba(34,197,94,0.24);
+  }
+  .status-pill.declined {
+    background: var(--parchment); color: var(--ash);
+    border-color: var(--stone);
+  }
+  .status-pill.declined::before {
+    content: "✕";
+    margin-right: 4px;
+    color: var(--ash);
+    font-weight: 700;
   }
 
   /* ─── Status messages ────────────────────────────── */
@@ -760,6 +788,17 @@
     transition: color var(--transition), background var(--transition);
   }
   .modal-close:hover { color: var(--ink); background: var(--parchment); }
+
+  /* ─── Submission-detail modal note ─────────────── */
+  .sub-modal-note {
+    margin: 0 0 8px;
+    padding: 12px 14px;
+    background: var(--parchment);
+    border: 1px solid var(--stone);
+    border-radius: var(--radius-sm);
+    font-size: 13px; color: var(--graphite); line-height: 1.55;
+  }
+  .sub-modal-note[hidden] { display: none; }
 
   /* ─── Confirm modal ─────────────────────────────── */
   #confirm-modal { align-items: center; padding: 16px; }
@@ -1162,6 +1201,22 @@
 <footer class="site-foot">
   © <span id="foot-year"></span> Calliope RM
 </footer>
+
+<!-- ─── Submission detail modal (for non-public items) ─── -->
+<div class="modal-bg" id="sub-modal" hidden role="dialog" aria-modal="true" aria-labelledby="sub-modal-title">
+  <div class="modal">
+    <button class="modal-close" id="sub-modal-close" aria-label="Close">&times;</button>
+    <h2 id="sub-modal-title"></h2>
+    <div class="modal-meta">
+      <div class="modal-meta-pills" id="sub-modal-meta"></div>
+    </div>
+    <p class="sub-modal-note" id="sub-modal-note"></p>
+    <div class="modal-comments" id="sub-modal-comments" hidden>
+      <h3>Updates from the team</h3>
+      <div id="sub-modal-comments-list"></div>
+    </div>
+  </div>
+</div>
 
 <!-- ─── Confirm modal ────────────────────────────────── -->
 <div class="modal-bg" id="confirm-modal" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title">
@@ -1770,11 +1825,48 @@
   function writeSubmissions(list) {
     try { localStorage.setItem(SUB_KEY, JSON.stringify(list.slice(0, SUB_MAX))); } catch {}
   }
-  function recordSubmission(number, title) {
+  function recordSubmission(number, title, token) {
     if (!number) return;
     const list = readSubmissions().filter(s => s.number !== number);
-    list.unshift({ number, title, submittedAt: new Date().toISOString() });
+    const entry = { number, title, submittedAt: new Date().toISOString() };
+    if (token) entry.token = token;
+    list.unshift(entry);
     writeSubmissions(list);
+  }
+
+  // Cache of status lookups for items not on the public board, keyed by
+  // issue number. Populated from /api/status; survives only this tab.
+  const statusCache = new Map();
+
+  async function fetchStatusForUnknown(items) {
+    // items: [{ number, token }]; entries without tokens are dropped
+    // (legacy localStorage rows from before tokens were issued).
+    const signed = items.filter(i => i && i.token);
+    if (!signed.length) return;
+    const requested = new Set(signed.map(i => i.number));
+    try {
+      const qs = signed.map(i => `${i.number}.${i.token}`).join(',');
+      const res = await fetch(`${ENDPOINT}/api/status?numbers=${encodeURIComponent(qs)}`);
+      if (!res.ok) return; // transient: don't cache, allow retry next render
+      const data = await res.json();
+      const returned = new Set();
+      for (const item of (data.items || [])) {
+        statusCache.set(item.number, item);
+        returned.add(item.number);
+      }
+      // Numbers we asked about that the server didn't return have
+      // invalid signatures (rotated STATUS_SIGN_KEY, corrupted local
+      // token, repo migration). Cache a sentinel so the next render
+      // doesn't immediately re-queue them and loop forever — the row
+      // will keep showing as "Awaiting triage", which matches what we
+      // can honestly tell the customer with the data we have.
+      for (const n of requested) {
+        if (!returned.has(n)) {
+          statusCache.set(n, { number: n, state: 'invalid', reason: null });
+        }
+      }
+      renderYourSubmissions();
+    } catch {}
   }
 
   function permalinkFor(number) {
@@ -1794,36 +1886,155 @@
       }
     }
 
+    const needStatus = [];
+
     list.innerHTML = items.map(s => {
       const found = onBoardByNumber.get(s.number);
       const when = formatDate(s.submittedAt);
-      let status, titleClass;
+      let status, kind;
       if (found) {
         const colName = found.col.name;
         const closed  = found.issue.state === 'closed';
         const cls     = closed ? 'shipped' : '';
         status = `<span class="status-pill ${cls}">${closed ? '✓ ' : ''}${escape(colName)}</span>`;
-        titleClass = 'title is-link';
+        kind = 'board';
       } else {
-        status = `<span class="status-pill awaiting">Awaiting triage</span>`;
-        titleClass = 'title';
+        const stat = statusCache.get(s.number);
+        if (!stat) {
+          // Only ask the server about items we have a token for.
+          // Tokenless legacy entries silently stay as "Awaiting triage".
+          if (s.token) needStatus.push({ number: s.number, token: s.token });
+          status = `<span class="status-pill awaiting">Awaiting triage</span>`;
+          kind = 'awaiting';
+        } else if (stat.state === 'closed') {
+          if (stat.reason === 'completed') {
+            status = `<span class="status-pill shipped">✓ Closed</span>`;
+            kind = 'closed';
+          } else {
+            status = `<span class="status-pill declined">Declined</span>`;
+            kind = 'declined';
+          }
+        } else {
+          status = `<span class="status-pill awaiting">Awaiting triage</span>`;
+          kind = 'awaiting';
+        }
       }
       const title = escape(s.title || `Issue #${s.number}`);
-      const dataLink = found ? `data-open="${s.number}"` : '';
       return `
-        <div class="submission-row">
-          <span class="${titleClass}" ${dataLink}>${title}</span>
+        <div class="submission-row" data-number="${s.number}" data-kind="${kind}" role="button" tabindex="0">
+          <span class="title is-link">${title}</span>
           <span class="when">${escape(when)}</span>
           <span class="status">${status}</span>
         </div>
       `;
     }).join('');
 
-    list.querySelectorAll('.title.is-link').forEach(el => {
-      el.addEventListener('click', () => openModal(parseInt(el.dataset.open, 10)));
+    list.querySelectorAll('.submission-row').forEach(row => {
+      const open = () => openSubmissionRow(row);
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      });
     });
 
     wrap.hidden = false;
+
+    // Kick off a status lookup for any items we couldn't resolve from
+    // the public board. Re-renders when the response arrives.
+    if (needStatus.length) fetchStatusForUnknown(needStatus);
+  }
+
+  // ─── SUBMISSION DETAIL MODAL ─────────────────────────────────────
+  // For items that aren't on the public roadmap, we open a small modal
+  // showing what we know — title, status, submitted date — plus any
+  // team comments fetched from the same /api/comments endpoint the
+  // public roadmap modal uses. The endpoint already strips PII and
+  // internal triage notes, so it's safe to surface here.
+  const subModal      = document.getElementById('sub-modal');
+  const subModalTitle = document.getElementById('sub-modal-title');
+  const subModalMeta  = document.getElementById('sub-modal-meta');
+  const subModalNote  = document.getElementById('sub-modal-note');
+  const subCommentsWrap = document.getElementById('sub-modal-comments');
+  const subCommentsList = document.getElementById('sub-modal-comments-list');
+
+  document.getElementById('sub-modal-close').addEventListener('click', () => closeSubModal());
+  subModal.addEventListener('click', (e) => { if (e.target === subModal) closeSubModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !subModal.hidden) closeSubModal(); });
+
+  function closeSubModal() {
+    if (subCommentsAbort) subCommentsAbort.abort();
+    subModal.hidden = true;
+    subCommentsWrap.hidden = true;
+    subCommentsList.innerHTML = '';
+  }
+
+  function openSubmissionRow(row) {
+    const number = parseInt(row.dataset.number, 10);
+    const kind   = row.dataset.kind;
+
+    // Public roadmap items always go through the existing modal so the
+    // user gets the full body, screenshots, and the live-rendered
+    // markdown.
+    if (kind === 'board') { openModal(number); return; }
+
+    const sub = readSubmissions().find(s => s.number === number);
+    if (!sub) return;
+
+    subModalTitle.textContent = sub.title || `Issue #${number}`;
+
+    let pill, note;
+    if (kind === 'awaiting') {
+      pill = `<span class="status-pill awaiting">Awaiting triage</span>`;
+      note = "We've received your submission and will triage it within a couple of days. If we close it without making it public, the team's reasoning will appear here.";
+    } else if (kind === 'closed') {
+      pill = `<span class="status-pill shipped">✓ Closed</span>`;
+      note = "This was closed by the team. If they left a note explaining why, you'll see it below.";
+    } else {
+      pill = `<span class="status-pill declined">Declined</span>`;
+      note = "The team chose not to ship this — typically because it's a duplicate, out of scope, or already covered by something else. Their reasoning, if any, is below.";
+    }
+    const submitted = `<span>Submitted ${escape(formatDate(sub.submittedAt))}</span>`;
+    subModalMeta.innerHTML = `${pill} <span>•</span> ${submitted}`;
+    subModalNote.textContent = note;
+
+    subModal.hidden = false;
+    loadSubComments(number, sub.token);
+  }
+
+  // Cancels any in-flight comments fetch when the user opens a different
+  // submission, so a slow response for issue A can't overwrite the
+  // already-rendered comments for issue B.
+  let subCommentsAbort = null;
+
+  async function loadSubComments(number, token) {
+    if (subCommentsAbort) subCommentsAbort.abort();
+    const ctrl = new AbortController();
+    subCommentsAbort = ctrl;
+
+    subCommentsWrap.hidden = false;
+    subCommentsList.innerHTML = '<div class="comment-loading">Loading updates…</div>';
+    try {
+      // Pass the per-submission HMAC token so /api/comments will return
+      // updates on issues that haven't been made public yet (declined
+      // tickets, items still in triage). Public-roadmap items don't
+      // need it; the server allows tokenless reads when the issue
+      // carries the `public` label.
+      const params = new URLSearchParams({ issue: String(number) });
+      if (token) params.set('token', token);
+      const res = await fetch(`${ENDPOINT}/api/comments?${params.toString()}`, { signal: ctrl.signal });
+      if (ctrl.signal.aborted) return;
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      if (ctrl.signal.aborted) return;
+      if (!data.comments || data.comments.length === 0) {
+        subCommentsWrap.hidden = true;
+        return;
+      }
+      subCommentsList.innerHTML = data.comments.map(commentHTML).join('');
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // user opened a different row
+      subCommentsWrap.hidden = true;
+    }
   }
 
   document.getElementById('btn-clear-submissions').addEventListener('click', async () => {
@@ -1925,7 +2136,7 @@
       });
       const out = await res.json().catch(() => ({}));
       if (res.ok) {
-        recordSubmission(out.number, form.elements.title.value.trim());
+        recordSubmission(out.number, form.elements.title.value.trim(), out.token);
         renderYourSubmissions();
         showSuccess(out.number);
       } else {

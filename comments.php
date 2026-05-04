@@ -46,6 +46,29 @@ if (!$owner || !$repo || !$token) {
     json_out(['error' => 'Server misconfigured'], 500);
 }
 
+// ─── Access control ──────────────────────────────────────────────────
+// Public-board issues are visible to anyone. Non-public issues (still
+// in triage, declined, internally-closed) require a valid HMAC token
+// — the same one /api/status uses — so a stranger faking a
+// `calliope-submissions` localStorage row can't pull team comments
+// they were never meant to see.
+$callerToken = (string)($_GET['token'] ?? '');
+$signKey     = (string)(getenv('STATUS_SIGN_KEY') ?: '');
+
+$validToken = false;
+if ($signKey !== '' && $callerToken !== '') {
+    // Same construction as submit.php — `<owner>/<repo>#<n>` so a
+    // shared key can't validate tokens across deployments.
+    $expected   = substr(hash_hmac('sha256', "$owner/$repo#$issue", $signKey), 0, 16);
+    $validToken = hash_equals($expected, $callerToken);
+}
+
+if (!$validToken && !issue_is_public($owner, $repo, $issue, $token)) {
+    // Don't disclose existence: anonymous access to a non-public
+    // issue's comments looks the same as the issue not existing at all.
+    json_out(['error' => 'Not found'], 404);
+}
+
 // ─── Cache fast-path ─────────────────────────────────────────────────
 $ttl       = (int)(getenv('COMMENTS_CACHE_TTL') ?: 60);
 $cacheDir  = getenv('COMMENTS_CACHE_DIR') ?: sys_get_temp_dir();
@@ -129,4 +152,63 @@ function json_out(array $data, int $status = 200): void {
     header('Content-Type: application/json');
     echo json_encode($data);
     exit;
+}
+
+/**
+ * Returns true if the issue carries the `public` label.
+ *
+ * Cached per-issue so the labels lookup isn't repeated on every modal
+ * open (cache hits skip the GitHub round-trip entirely) and so a
+ * GitHub outage doesn't make previously-public issues' cached
+ * comments suddenly inaccessible.
+ */
+function issue_is_public(string $owner, string $repo, int $issue, string $ghToken): bool {
+    $cacheDir  = (string)(getenv('COMMENTS_CACHE_DIR') ?: sys_get_temp_dir());
+    $ttl       = (int)(getenv('PUBLIC_CACHE_TTL') ?: 300);
+    $cacheFile = $cacheDir . '/calliope-pubcheck-' . sha1("$owner/$repo:$issue") . '.json';
+
+    if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+        $cached = json_decode((string)file_get_contents($cacheFile), true);
+        if (is_array($cached) && array_key_exists('public', $cached)) {
+            return (bool)$cached['public'];
+        }
+    }
+
+    $ch = curl_init("https://api.github.com/repos/$owner/$repo/issues/$issue");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_HTTPHEADER     => [
+            "Authorization: Bearer $ghToken",
+            'Accept: application/vnd.github+json',
+            'User-Agent: customer-portal',
+        ],
+    ]);
+    $body = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    // On transient GitHub failure (rate limit, 5xx) fall back to the
+    // most recent cached decision if any — even if expired — rather
+    // than locking out cached public comments. Only persist a fresh
+    // result back to the cache when the lookup actually succeeded.
+    if ($code < 200 || $code >= 300) {
+        if (is_file($cacheFile)) {
+            $stale = json_decode((string)file_get_contents($cacheFile), true);
+            if (is_array($stale) && array_key_exists('public', $stale)) {
+                return (bool)$stale['public'];
+            }
+        }
+        return false;
+    }
+
+    $data = json_decode((string)$body, true);
+    $isPublic = false;
+    if (is_array($data)) {
+        foreach (($data['labels'] ?? []) as $l) {
+            if (($l['name'] ?? '') === 'public') { $isPublic = true; break; }
+        }
+    }
+    @file_put_contents($cacheFile, json_encode(['public' => $isPublic]), LOCK_EX);
+    return $isPublic;
 }

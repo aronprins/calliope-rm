@@ -52,6 +52,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { json_out(['error' => 'Method not
 // ─── Honeypot ────────────────────────────────────────────────────────
 if (!empty($_POST['website'])) { json_out(['ok' => true]); }
 
+// ─── Required env: STATUS_SIGN_KEY ──────────────────────────────────
+// Without this the submission would land in GitHub but the customer's
+// localStorage row would never get a token, leaving them unable to
+// see live status (declined / closed / triage) for the rest of that
+// device's life. Fail fast instead of silently mis-configuring data.
+if (!getenv('STATUS_SIGN_KEY')) {
+    error_log('submit.php: STATUS_SIGN_KEY not configured');
+    json_out(['error' => 'Server misconfigured'], 500);
+}
+
 // ─── Parse + validate ────────────────────────────────────────────────
 $ticket = parse_submission($_POST);
 $err = validate_submission($ticket);
@@ -81,7 +91,19 @@ if ($gh === null) {
     json_out(['error' => 'Could not submit. Please try again later.'], 502);
 }
 
-json_out(['ok' => true, 'number' => $gh['number']]);
+// Issue a short HMAC token tied to this issue number AND this
+// owner/repo, so a key shared across deployments (or carried over a
+// repo migration) can't validate tokens against a different repo's
+// issue space. The client stores the token next to the number in
+// localStorage and passes it to /api/status and /api/comments, both
+// of which recompute the HMAC over the same `<owner>/<repo>#<n>`
+// string before allowing access.
+$signKey   = (string)getenv('STATUS_SIGN_KEY');
+$ghOwnerEv = (string)getenv('GITHUB_OWNER');
+$ghRepoEv  = (string)getenv('GITHUB_REPO');
+$token     = substr(hash_hmac('sha256', "$ghOwnerEv/$ghRepoEv#" . $gh['number'], $signKey), 0, 16);
+
+json_out(['ok' => true, 'number' => $gh['number'], 'token' => $token]);
 
 // ─── Functions ───────────────────────────────────────────────────────
 

@@ -24,6 +24,10 @@ if ($path === '/api/comments') {
     require __DIR__ . '/comments.php';
     return true;
 }
+if ($path === '/api/status') {
+    require __DIR__ . '/status.php';
+    return true;
+}
 if ($path === '/' || $path === '/index.html') {
     header('Content-Type: text/html; charset=utf-8');
     readfile(__DIR__ . '/index.html');
