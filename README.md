@@ -75,7 +75,18 @@ The PHP path is the one to choose if you want screenshots embedded in your issue
 2. **Add detail** *(optional)* — type-specific fields (repro steps and "is this blocking you?" for bugs; use case and success criteria for features/improvements). Routing context (area, environment, links) and "About you" (company, role) live behind disclosure blocks.
 3. **Review & send** — a summary of everything captured before submitting.
 
+After submission, the customer sees a clear "Thanks — got it." success state with a copyable permalink (`#issue=N` URL). Once the team triages and adds the `public` label, that exact link opens the card on the roadmap. Pre-triage, it's a dead anchor that just loads the page.
+
 There is no severity field. Triage decides priority — letting users self-assign severity is an anti-pattern (everyone picks "High").
+
+### "Your submissions" tracker
+
+The Submit tab also renders a small section listing every issue this browser has submitted, stored in `localStorage` only:
+
+- Items already on the public board show their current column (Planned / In Progress / Shipped, with a ✓ for closed) and click through to open the modal.
+- Items not yet visible show "Awaiting triage" in amber.
+
+This is **per-device** (clears with browser data, doesn't sync across devices) and entirely client-side — no auth, no server tracking. The localStorage key is `calliope-submissions` and stores at most 12 entries: `[{ number, title, submittedAt }]`. Customers can clear it with the inline "Clear" button.
 
 **Visual:** the portal uses the Clio KB design system (Geist font, zinc-tone palette, soft borders) and ships with a light/dark mode toggle in the header. Theme persists in `localStorage` and follows `prefers-color-scheme` on first visit.
 
