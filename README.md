@@ -193,7 +193,7 @@ sudo apt install nginx php-fpm php-gd php-curl
 
 ```bash
 sudo mkdir -p /var/www/calliope
-sudo cp submit.php board.php comments.php /var/www/calliope/
+sudo cp submit.php board.php comments.php status.php /var/www/calliope/
 sudo mkdir -p /var/lib/calliope/uploads
 sudo chown -R www-data:www-data /var/lib/calliope/uploads
 ```
