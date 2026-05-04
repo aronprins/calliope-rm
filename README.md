@@ -330,9 +330,55 @@ The card modal fetches `/api/comments?issue=N` when opened and renders comments 
 - **All comments from team members** — anyone whose `author_association` on GitHub is `OWNER`, `MEMBER`, or `COLLABORATOR`.
 - **Any comment containing the marker `<!-- public -->`** — useful for surfacing a customer's own follow-up reply, or for a team member commenting from an account without write access.
 
-The marker is stripped from the rendered output, so you can drop it anywhere in the comment body. Internal-only notes inside otherwise customer-visible comments can be wrapped in `<!-- ... -->` HTML comments or in the `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` block — both forms are stripped server-side before the comment is ever sent to the client.
+The `<!-- public -->` marker is stripped from the rendered output, so you can drop it anywhere in the comment body.
 
 Responses are cached per issue for 60 seconds (configurable via `COMMENTS_CACHE_TTL`).
+
+### Internal triage notes inside customer-visible comments
+
+Team comments are automatically customer-visible, but you'll often want to mix a public update with a private aside ("here's the ETA, and internally we should also check X"). Two ways to keep the private part hidden:
+
+**Inline notes — wrap them in `<!-- ... -->` HTML comments.** Anything inside the comment is stripped server-side by `comments.php` before the API ever returns the body, and GitHub's web UI hides the comment from rendered view but still shows it in the comment editor / raw view / `gh issue view`.
+
+```markdown
+Reproduced on staging. Will ship the fix in v1.42.
+
+<!-- triage: revert the URL state refactor in #87 if this regresses again -->
+```
+
+The customer sees only "Reproduced on staging. Will ship the fix in v1.42." The team sees the triage note when editing the comment or via the API.
+
+**Whole-block notes — wrap a multi-section aside in the same `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` markers used in issue bodies.** Useful when the internal aside has its own structure (multiple paragraphs, lists, headings):
+
+```markdown
+Shipped in v1.42 — see the [docs](https://example.com/docs/slack) for setup.
+
+<!-- CUSTOMER_HIDE_START -->
+## Internal follow-up
+- Confirm with legal whether two-way sync needs a DPA addendum
+- Schedule a metrics check after 7 days of usage
+<!-- CUSTOMER_HIDE_END -->
+```
+
+Both forms are stripped server-side, so they never appear in the network response — not just hidden in the rendered DOM.
+
+### Quick reference
+
+| You want… | Put this in the comment |
+| --- | --- |
+| Public update from a team account | Just write it. Comments from `OWNER`, `MEMBER`, or `COLLABORATOR` are visible by default. |
+| Public update from a non-team account (or a customer reply you want to surface) | Include `<!-- public -->` anywhere in the body. |
+| A short internal note alongside a public one | `<!-- internal: don't escalate, customer was on a stale build -->` |
+| A whole internal section (multi-line, headings, lists) | Wrap it in `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` |
+| A fully internal comment (no public part) | Either wrap the whole thing in `<!-- ... -->`, or just write it without any `<!-- public -->` marker from a non-team account — non-team comments default to hidden. |
+
+To verify a comment was filtered correctly, hit the endpoint directly and check the JSON:
+
+```bash
+curl -s https://yourdomain.com/api/comments?issue=42 | jq '.comments[] | .body'
+```
+
+If you can see the internal text in that output, the strip didn't work — review the markers and check that the cache is busted (delete `calliope-comments-*.json` from `BOARD_CACHE_DIR` / `sys_get_temp_dir()`).
 
 ## Triage workflow
 
