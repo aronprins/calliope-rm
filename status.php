@@ -17,7 +17,12 @@
  *   STATUS_CACHE_DIR  cache directory (default sys_get_temp_dir())
  *
  * Request:
- *   GET /api/status?numbers=18,42,77   (max 20 numbers per call)
+ *   GET /api/status?numbers=N.TOKEN,N.TOKEN,...   (max 20 per call)
+ *
+ * Each `numbers` entry is `<issue-number>.<HMAC token>`. The token is
+ * issued by submit.php at submission time and stored client-side in
+ * localStorage. Without a valid token an entry is silently dropped,
+ * so anonymous callers can't enumerate issue state by trying numbers.
  */
 
 declare(strict_types=1);
@@ -34,13 +39,26 @@ header('Vary: Origin');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'GET')     { json_out(['error' => 'Method not allowed'], 405); }
 
-// ─── Parse + validate numbers ────────────────────────────────────────
+// ─── Parse + validate numbers (with HMAC tokens) ─────────────────────
+$signKey = getenv('STATUS_SIGN_KEY');
+if (!$signKey) {
+    error_log('status.php: STATUS_SIGN_KEY not configured');
+    json_out(['error' => 'Server misconfigured'], 500);
+}
+
 $raw   = (string)($_GET['numbers'] ?? '');
 $parts = array_filter(array_map('trim', explode(',', $raw)));
+if (count($parts) > STATUS_MAX_NUMBERS) {
+    json_out(['error' => 'Too many issue numbers in one request.'], 400);
+}
+
 $numbers = [];
 foreach ($parts as $p) {
-    $n = filter_var($p, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-    if ($n) $numbers[] = $n;
+    if (!preg_match('/^(\d+)\.([a-f0-9]{16})$/', $p, $m)) continue;
+    $n        = (int)$m[1];
+    $given    = $m[2];
+    $expected = substr(hash_hmac('sha256', (string)$n, $signKey), 0, 16);
+    if (hash_equals($expected, $given)) $numbers[] = $n;
 }
 $numbers = array_values(array_unique($numbers));
 
@@ -48,9 +66,6 @@ if (count($numbers) === 0) {
     header('Content-Type: application/json');
     echo json_encode(['items' => [], 'fetchedAt' => gmdate('c')]);
     exit;
-}
-if (count($numbers) > STATUS_MAX_NUMBERS) {
-    json_out(['error' => 'Too many issue numbers in one request.'], 400);
 }
 
 $owner = getenv('GITHUB_OWNER');
@@ -96,6 +111,19 @@ do {
     $execStatus = curl_multi_exec($mh, $running);
     if ($running) curl_multi_select($mh, 1.0);
 } while ($running > 0 && $execStatus === CURLM_OK);
+
+if ($execStatus !== CURLM_OK) {
+    // curl_multi failed at the stack level — don't pretend issues are
+    // "unknown" and don't poison the cache. Fail visibly so the client
+    // can retry instead of seeing stale "Awaiting triage" badges.
+    foreach ($handles as $ch) {
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+    }
+    curl_multi_close($mh);
+    error_log("status.php: curl_multi_exec returned $execStatus");
+    json_out(['error' => 'Could not load status.'], 502);
+}
 
 $items = [];
 foreach ($handles as $n => $ch) {

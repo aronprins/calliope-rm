@@ -81,7 +81,17 @@ if ($gh === null) {
     json_out(['error' => 'Could not submit. Please try again later.'], 502);
 }
 
-json_out(['ok' => true, 'number' => $gh['number']]);
+// Issue a short HMAC token tied to this issue number. The client
+// stores it next to the number in localStorage and passes it to
+// /api/status so the read endpoint can verify the caller actually
+// submitted this issue and isn't just enumerating.
+$token = '';
+$signKey = getenv('STATUS_SIGN_KEY');
+if ($signKey) {
+    $token = substr(hash_hmac('sha256', (string)$gh['number'], $signKey), 0, 16);
+}
+
+json_out(['ok' => true, 'number' => $gh['number'], 'token' => $token]);
 
 // ─── Functions ───────────────────────────────────────────────────────
 
