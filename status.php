@@ -126,6 +126,7 @@ if ($execStatus !== CURLM_OK) {
 }
 
 $items = [];
+$hadTransientError = false;
 foreach ($handles as $n => $ch) {
     $body = curl_multi_getcontent($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -133,17 +134,23 @@ foreach ($handles as $n => $ch) {
     curl_close($ch);
 
     if ($code === 404) {
+        // Genuine "doesn't exist" — record as unknown and cache. Retries
+        // won't help because the issue is really gone.
         $items[] = ['number' => $n, 'state' => 'unknown', 'reason' => null];
         continue;
     }
     if ($code < 200 || $code >= 300) {
+        // Transient: rate limit, expired token, GitHub 5xx. Don't fold
+        // this into the response as "unknown" — that would freeze the
+        // misleading state into the cache for STATUS_CACHE_TTL. Mark
+        // the whole response as a failure and bail after the loop.
         error_log("status.php: GitHub returned $code for issue $n");
-        $items[] = ['number' => $n, 'state' => 'unknown', 'reason' => null];
+        $hadTransientError = true;
         continue;
     }
     $data = json_decode((string)$body, true);
     if (!is_array($data)) {
-        $items[] = ['number' => $n, 'state' => 'unknown', 'reason' => null];
+        $hadTransientError = true;
         continue;
     }
     // Skip pull requests — they share the issue number space but aren't
@@ -159,6 +166,10 @@ foreach ($handles as $n => $ch) {
     ];
 }
 curl_multi_close($mh);
+
+if ($hadTransientError) {
+    json_out(['error' => 'Could not load status.'], 502);
+}
 
 $result  = ['items' => $items, 'fetchedAt' => gmdate('c')];
 $payload = json_encode($result);

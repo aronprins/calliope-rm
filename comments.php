@@ -152,7 +152,26 @@ function json_out(array $data, int $status = 200): void {
     exit;
 }
 
+/**
+ * Returns true if the issue carries the `public` label.
+ *
+ * Cached per-issue so the labels lookup isn't repeated on every modal
+ * open (cache hits skip the GitHub round-trip entirely) and so a
+ * GitHub outage doesn't make previously-public issues' cached
+ * comments suddenly inaccessible.
+ */
 function issue_is_public(string $owner, string $repo, int $issue, string $ghToken): bool {
+    $cacheDir  = (string)(getenv('COMMENTS_CACHE_DIR') ?: sys_get_temp_dir());
+    $ttl       = (int)(getenv('PUBLIC_CACHE_TTL') ?: 300);
+    $cacheFile = $cacheDir . '/calliope-pubcheck-' . sha1("$owner/$repo:$issue") . '.json';
+
+    if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+        $cached = json_decode((string)file_get_contents($cacheFile), true);
+        if (is_array($cached) && array_key_exists('public', $cached)) {
+            return (bool)$cached['public'];
+        }
+    }
+
     $ch = curl_init("https://api.github.com/repos/$owner/$repo/issues/$issue");
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -166,11 +185,28 @@ function issue_is_public(string $owner, string $repo, int $issue, string $ghToke
     $body = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if ($code < 200 || $code >= 300) return false;
-    $data = json_decode((string)$body, true);
-    if (!is_array($data)) return false;
-    foreach (($data['labels'] ?? []) as $l) {
-        if (($l['name'] ?? '') === 'public') return true;
+
+    // On transient GitHub failure (rate limit, 5xx) fall back to the
+    // most recent cached decision if any — even if expired — rather
+    // than locking out cached public comments. Only persist a fresh
+    // result back to the cache when the lookup actually succeeded.
+    if ($code < 200 || $code >= 300) {
+        if (is_file($cacheFile)) {
+            $stale = json_decode((string)file_get_contents($cacheFile), true);
+            if (is_array($stale) && array_key_exists('public', $stale)) {
+                return (bool)$stale['public'];
+            }
+        }
+        return false;
     }
-    return false;
+
+    $data = json_decode((string)$body, true);
+    $isPublic = false;
+    if (is_array($data)) {
+        foreach (($data['labels'] ?? []) as $l) {
+            if (($l['name'] ?? '') === 'public') { $isPublic = true; break; }
+        }
+    }
+    @file_put_contents($cacheFile, json_encode(['public' => $isPublic]), LOCK_EX);
+    return $isPublic;
 }
