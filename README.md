@@ -1,0 +1,401 @@
+# Customer Feedback Portal
+
+A lightweight customer-facing feedback portal that runs entirely on **GitHub Issues + Labels** as its database. Customers submit issues and view a public roadmap (kanban board) without ever needing a GitHub account, while your source code stays in a private repository.
+
+No database. No auth system. No admin panel. Your team works in GitHub like normal; the portal reads and writes through a thin proxy.
+
+## Contents
+
+- [How it works](#how-it-works)
+- [Deployment options](#deployment-options)
+- [The submission form](#the-submission-form)
+- [Image uploads](#image-uploads)
+- [Setup — Cloudflare Worker](#setup--cloudflare-worker)
+- [Setup — VPS with nginx + PHP-FPM](#setup--vps-with-nginx--php-fpm)
+- [Label reference](#label-reference)
+- [Triage workflow](#triage-workflow)
+- [Customization](#customization)
+- [Security notes](#security-notes)
+- [Troubleshooting](#troubleshooting)
+- [Future extensions](#future-extensions)
+
+## How it works
+
+```
+  ┌──────────────┐         ┌──────────────────┐         ┌──────────────────┐
+  │  Customer    │  HTTPS  │  Backend proxy   │   API   │  GitHub Issues   │
+  │  (browser)   │ ──────▶ │  (Worker or PHP) │ ──────▶ │  (private repo)  │
+  │  portal.html │ ◀────── │                  │ ◀────── │                  │
+  └──────────────┘         └──────────────────┘         └──────────────────┘
+        ▲                          │
+        │ token never               │ holds GITHUB_TOKEN
+        │ leaves server             │ as encrypted env / secret
+```
+
+**Two endpoints:**
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/submit` | POST | Customer submits a new issue (multipart, supports image uploads) |
+| `/api/board` | GET | Returns issues with the `public` label, grouped into kanban columns |
+
+**Four label namespaces** do the work:
+
+- `public` — gates visibility. Without this label, an issue is invisible to customers.
+- `status:*` — defines kanban columns (`status:planned`, `status:in-progress`, `status:shipped`).
+- `type:*` — categorizes issues (`type:bug`, `type:feature`, `type:improvement`).
+- `area:*` / `env:*` — capture affected area and environment for routing.
+
+## Deployment options
+
+Two backends are provided. Pick one based on where you'd rather run it.
+
+| | **Cloudflare Worker** (`worker.js`) | **VPS, nginx + PHP-FPM** (`submit.php`) |
+| --- | --- | --- |
+| Hosting | Cloudflare's edge | Your VPS |
+| Image uploads | Not supported in this Worker | Supported (WebP, on-disk) |
+| Cost | Free tier covers 100k req/day | VPS only |
+| Setup | `wrangler` CLI + secrets | Drop in a PHP file + env vars |
+| Storage | Stateless | Uploaded images live on the VPS |
+
+The PHP path is the one to choose if you want screenshots embedded in your issues.
+
+## The submission form
+
+`portal.html` ships with a 3-step submission flow optimized for response rate:
+
+1. **The basics** — type (bug / feature / improvement), one-sentence summary, and a freeform description. Optional screenshots (drag-and-drop, click, or paste from clipboard). Only type, summary, and description are required.
+2. **Add detail** *(optional)* — type-specific fields (repro steps and "is this blocking you?" for bugs; use case and success criteria for features/improvements). Contact info and routing context (area, environment, links) live behind disclosure blocks.
+3. **Review & send** — a summary of everything captured before submitting.
+
+There is no severity field. Triage decides priority — letting users self-assign severity is an anti-pattern (everyone picks "High").
+
+## Image uploads
+
+Available with the PHP backend.
+
+**On the client:**
+- Drag and drop, click to browse, or paste from clipboard
+- Up to 4 images, 10MB each
+- Allowed: PNG, JPEG, GIF, WebP
+- Thumbnail previews with per-image remove buttons
+
+**On the server (`submit.php`):**
+- Validates mime via magic bytes (not the `Content-Type` header)
+- Decodes with GD, scales down to 2000px on the longest edge
+- Re-encodes to **WebP at quality 82** — typically 5–10× smaller than the source PNG, EXIF stripped as a side effect
+- Saves to `<UPLOADS_DIR>/YYYY/MM/DD/<random-token>.webp`
+- Embeds image URLs in the GitHub issue body under a `## Screenshots` section
+- If issue creation fails, freshly written files are deleted so orphans don't accumulate
+
+**Storage trade-off:** images live on your VPS permanently. GitHub renders them via its [camo](https://github.com/atmos/camo) image proxy, which caches but eventually re-fetches from origin — so if you delete a file, the image will eventually break in the issue. Plan backups for `UPLOADS_DIR` accordingly.
+
+## Setup — Cloudflare Worker
+
+Use this path if you don't need image uploads.
+
+### 1. Create the GitHub labels (see [reference](#label-reference))
+
+### 2. Create a fine-grained GitHub token
+
+1. **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**
+2. Repository access: select the specific repo
+3. Repository permissions: `Issues` → **Read and write**
+4. Set a 90-day expiration with a calendar reminder to rotate
+5. Copy the token — you won't see it again
+
+### 3. Deploy the Worker
+
+```bash
+npm install -g wrangler
+wrangler login
+wrangler init customer-portal-worker
+cd customer-portal-worker
+cp /path/to/worker.js src/index.js
+
+wrangler secret put GITHUB_TOKEN
+wrangler secret put GITHUB_OWNER     # e.g. "acme-corp"
+wrangler secret put GITHUB_REPO      # e.g. "feedback"
+wrangler secret put ALLOWED_ORIGIN   # e.g. "https://acme.com"
+
+wrangler deploy
+```
+
+### 4. Configure the frontend
+
+In `portal.html`:
+
+```js
+const ENDPOINT = 'https://YOUR-WORKER.workers.dev'; // <-- replace
+```
+
+Upload `portal.html` to your site.
+
+> **Note:** The Worker doesn't currently handle image uploads. Submitting a form with attachments will succeed but the images will be ignored. Use the PHP backend if you need screenshots in your issues.
+
+## Setup — VPS with nginx + PHP-FPM
+
+Use this path if you want image uploads or already host on a VPS.
+
+### 1. Create the GitHub labels (see [reference](#label-reference))
+
+### 2. Create a fine-grained GitHub token (same as Worker setup, step 2)
+
+### 3. Install dependencies on the VPS
+
+```bash
+sudo apt update
+sudo apt install nginx php-fpm php-gd php-curl
+```
+
+`php-gd` provides `imagewebp()`. `php-curl` is used to talk to the GitHub API.
+
+### 4. Drop in `submit.php` and create the uploads directory
+
+```bash
+sudo mkdir -p /var/www/calliope
+sudo cp submit.php /var/www/calliope/
+sudo mkdir -p /var/lib/calliope/uploads
+sudo chown -R www-data:www-data /var/lib/calliope/uploads
+```
+
+### 5. Configure environment variables
+
+Edit your php-fpm pool config (e.g. `/etc/php/8.2/fpm/pool.d/www.conf`) and add:
+
+```ini
+env[GITHUB_TOKEN]   = ghp_your_token_here
+env[GITHUB_OWNER]   = acme-corp
+env[GITHUB_REPO]    = feedback
+env[ALLOWED_ORIGIN] = https://acme.com
+env[UPLOADS_DIR]    = /var/lib/calliope/uploads
+env[UPLOADS_URL]    = https://acme.com/uploads
+```
+
+Reload php-fpm: `sudo systemctl reload php8.2-fpm`.
+
+### 6. Configure nginx
+
+```nginx
+server {
+  listen 443 ssl http2;
+  server_name acme.com;
+
+  client_max_body_size 50m;
+
+  # Frontend
+  location / {
+    root /var/www/calliope;
+    try_files $uri $uri/ =404;
+  }
+
+  # Submission endpoint
+  location = /api/submit {
+    fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME /var/www/calliope/submit.php;
+    include fastcgi_params;
+  }
+
+  # Public uploads
+  location /uploads/ {
+    alias /var/lib/calliope/uploads/;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    add_header X-Content-Type-Options nosniff;
+  }
+}
+```
+
+Reload: `sudo nginx -t && sudo systemctl reload nginx`.
+
+### 7. Configure the frontend
+
+In `portal.html`:
+
+```js
+const ENDPOINT = 'https://acme.com'; // your domain — submit.php is at /api/submit
+```
+
+> **Heads up:** The `GET /api/board` endpoint is currently only implemented in `worker.js`. If you're going pure-PHP, you'll want to port `handleBoard` from `worker.js` to a `board.php` (straightforward — it's a single GitHub API call plus column grouping).
+
+### 8. Test
+
+1. Open `portal.html` in your browser.
+2. Submit a test issue with a screenshot. It should appear in your GitHub repo with `from-customer` and `type:*` labels, a structured Markdown body, and the screenshot embedded under a `## Screenshots` heading.
+3. Add `public` and `status:planned` to the issue. After the cache expires, the card appears on the board.
+
+## Label reference
+
+In your repo, go to **Issues → Labels → New label** and create:
+
+| Label | Suggested color | Purpose |
+| --- | --- | --- |
+| `public` | `#0E8A16` (green) | Gates customer visibility |
+| `status:planned` | `#C5DEF5` (light blue) | Column 1 |
+| `status:in-progress` | `#FBCA04` (yellow) | Column 2 |
+| `status:shipped` | `#0E8A16` (green) | Column 3 |
+| `type:bug` | `#D73A4A` (red) | Bug reports |
+| `type:feature` | `#0969DA` (blue) | Feature requests |
+| `type:improvement` | `#1F883D` (green) | Improvements |
+| `area:auth` | `#5319E7` (purple) | Authentication |
+| `area:billing` | `#1D76DB` (blue) | Billing |
+| `area:dashboard` | `#0E8A16` (green) | Dashboard |
+| `area:integrations` | `#006B75` (teal) | Integrations |
+| `area:notifications` | `#C2E0C6` (mint) | Notifications |
+| `area:api` | `#D4C5F9` (lavender) | API |
+| `area:export` | `#F9D0C4` (peach) | Export / reporting |
+| `area:mobile` | `#F7C6C7` (pink) | Mobile |
+| `area:performance` | `#F9D0C4` (peach) | Performance |
+| `area:other` | `#EDEDED` (gray) | Other |
+| `env:production` | `#B60205` (red) | Production |
+| `env:staging` | `#FBCA04` (yellow) | Staging |
+| `env:sandbox` | `#0E8A16` (green) | Sandbox / test |
+| `env:local` | `#5319E7` (purple) | Local / development |
+| `env:unknown` | `#EDEDED` (gray) | Unknown |
+| `from-customer` | `#FBCA04` (yellow) | Auto-applied to submissions |
+
+### Required for visibility
+
+| Label | Effect |
+| --- | --- |
+| `public` | Issue appears on the board. **No `public` label = invisible.** |
+
+### Status (kanban columns)
+
+| Label | Column |
+| --- | --- |
+| `status:planned` | Planned |
+| `status:in-progress` | In Progress |
+| `status:shipped` | Shipped |
+| _(none)_ | Defaults to Planned |
+
+### Type (filter + color coding)
+
+| Label | UI treatment |
+| --- | --- |
+| `type:bug` | Red pill |
+| `type:feature` | Blue pill |
+| `type:improvement` | Green pill |
+
+### Hidden from customers
+
+These labels are stripped from card display:
+
+- `public`
+- `from-customer`
+- Any `status:*` label
+- Any `type:*` label (rendered as a colored pill instead)
+
+Other labels (e.g., `priority:high`, `area:billing`) **will be shown** as small pills on cards. To hide additional labels, extend the filter list in `worker.js` (`transformIssue` function).
+
+## Triage workflow
+
+When a customer submits feedback:
+
+1. A new issue appears in your repo with:
+   - Labels: `from-customer`, `type:*`, plus `area:*` and `env:*` if the user filled them in
+   - A structured Markdown body with description, type-specific fields, screenshots (if uploaded), and submission metadata
+
+2. **Triage:**
+   - **Spam or duplicate?** Close the issue.
+   - **Legitimate?** Add `public`, a `status:*` label, and any internal labels (`priority:*`, etc.).
+
+3. **Working on it?** Swap `status:planned` for `status:in-progress`. Card moves columns within 60 seconds.
+
+4. **Shipped?** Swap to `status:shipped` and close the issue.
+
+> **Tip:** Save a GitHub filter for `is:open label:from-customer -label:public` — that's your triage queue.
+
+## Customization
+
+### Add more columns
+
+In `worker.js`, edit `STATUS_COLUMNS`:
+
+```js
+const STATUS_COLUMNS = [
+  { key: 'backlog',     name: 'Backlog' },
+  { key: 'planned',     name: 'Planned' },
+  { key: 'in-progress', name: 'In Progress' },
+  { key: 'shipped',     name: 'Shipped' },
+];
+```
+
+Create matching `status:backlog` labels in GitHub. The frontend's `.kanban` grid adapts automatically; consider adjusting `grid-template-columns` for the new count.
+
+### Add more types
+
+In `worker.js`, edit `ALLOWED_TYPES`. In `submit.php`, edit the `ALLOWED_TYPES` constant. In `portal.html`, add a matching type card and a `.pill.<newtype>` CSS rule.
+
+### Change cache duration
+
+In `worker.js`, find `'Cache-Control': 'max-age=60'` in `handleBoard`.
+
+### Restrict origins
+
+`ALLOWED_ORIGIN` enforces this. It must match your site's origin exactly — `https://acme.com` and `https://www.acme.com` are different origins.
+
+### Tune image quality / size limits
+
+In `submit.php`, edit the constants at the top:
+
+- `MAX_FILES` — how many images per submission (default 4)
+- `MAX_FILE_SIZE` — per-file cap in bytes (default 10MB)
+- `MAX_DIMENSION` — longest edge in pixels (default 2000)
+- `WEBP_QUALITY` — 0–100 (default 82, sweet spot for screenshots)
+
+The matching client-side caps live near the top of the `<script>` in `portal.html` (`MAX_FILES`, `MAX_SIZE`, `ALLOWED_MIMES`). Keep them in sync.
+
+## Security notes
+
+- **The GitHub token must never appear in client code.** Stored as a Worker secret or php-fpm env var. Don't log it, don't echo it in error responses, don't commit it.
+- **Use fine-grained PATs scoped to a single repo.** Limits blast radius if a token leaks.
+- **Rotate tokens regularly.** 90-day expiration with a calendar reminder.
+- **Image uploads are re-encoded server-side.** GD decoding + WebP re-encoding strips EXIF metadata and neutralizes any payload embedded in the original file. Don't skip this step if you accept user uploads.
+- **Magic-byte mime validation.** `submit.php` uses `finfo` to check actual file content, not the client-supplied `Content-Type`. Clients lie.
+- **Random filenames.** Uploaded images are stored under `<random-token>.webp` so URLs aren't enumerable.
+- **Honeypot.** Both backends silently accept (and discard) submissions where the hidden `website` field is filled — catches lazy bots.
+- **Rate-limiting.** For real spam, add [Cloudflare Turnstile](https://www.cloudflare.com/products/turnstile/) (free) — one script tag in the form and a verify call in the backend. nginx's `limit_req_zone` is also a fine first line of defense for the PHP path.
+- **Sanitize what's exposed.** The Worker's `transformIssue` controls what the board endpoint returns. Internal labels and comment threads are not exposed by default.
+
+## Troubleshooting
+
+**Cards don't appear after I add `public`.**
+The board response is cached for 60 seconds. Wait, then hard-refresh.
+
+**Form submission returns "Could not submit."**
+- *Worker:* `wrangler tail` for logs. Usually token expired, missing `Issues: Write` scope, or wrong owner/repo.
+- *PHP:* check `/var/log/nginx/error.log` and your php-fpm error log. Usually the same root causes, plus `UPLOADS_DIR` permissions.
+
+**"Server upload path not configured."**
+PHP backend: `UPLOADS_DIR` or `UPLOADS_URL` env var is missing. Verify your php-fpm pool config and that you reloaded php-fpm.
+
+**Images upload but don't appear in the issue.**
+Check that the `UPLOADS_URL` you set is publicly reachable. Open one of the URLs in an incognito window — if you can't see the image, GitHub can't either.
+
+**`Access-Control-Allow-Origin` errors in the browser console.**
+`ALLOWED_ORIGIN` must match your site's origin exactly (including `https://`, no trailing slash).
+
+**Submitted issues appear immediately on the board.**
+Check that you didn't include `public` in the labels array on the backend. Submissions get `from-customer` + `type:*` only — `public` is added during triage.
+
+**Pull requests show up on the board.**
+GitHub's `/issues` endpoint returns PRs too; the Worker filters them with `if (!i.pull_request)`. Make sure that filter is intact.
+
+**`imagewebp(): WebP support not enabled` in PHP error log.**
+`php-gd` was installed without WebP support. On Debian/Ubuntu, `apt install php-gd` includes it by default; on minimal images you may need to recompile or use `php-imagick` as an alternative.
+
+## Future extensions
+
+- **Permalinks:** `?issue=42` opens that card's modal directly. Useful for sharing.
+- **Closed-as-shipped styling:** fade or strike through closed cards in the Shipped column.
+- **Public comments:** surface comments from team members (or those marked with a `public-comment` label) in the modal.
+- **"Me too" upvoting:** post a `+1` reaction via the backend. Tracking just totals needs no storage; tracking *who* voted does.
+- **Changelog feed:** generate an RSS or JSON feed of recently-shipped issues.
+- **Pure-PHP `board.php`:** port `handleBoard` from `worker.js` so the VPS path doesn't need a Worker for the read side.
+- **GitHub Projects v2 integration:** swap label-driven status for a Project board as the source of truth via the GraphQL API.
+
+---
+
+**Stack:** GitHub Issues + Labels (data) · Cloudflare Workers *or* nginx + PHP-FPM (proxy) · Vanilla HTML/CSS/JS (frontend)
+**Files:** `portal.html`, `worker.js`, `submit.php`
