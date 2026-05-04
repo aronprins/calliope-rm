@@ -599,6 +599,90 @@
   .success-state .actions {
     display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
   }
+  .success-permalink {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin: 0 auto 8px;
+    padding: 6px 6px 6px 14px;
+    background: var(--parchment);
+    border: 1px solid var(--stone);
+    border-radius: 999px;
+    max-width: 100%;
+  }
+  .success-permalink[hidden] { display: none; }
+  .success-permalink code {
+    font-family: var(--font-mono); font-size: 12.5px; color: var(--graphite);
+    background: none; border: 0; padding: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;
+  }
+  .success-permalink-hint {
+    font-size: 12px; color: var(--ash); margin: 0 auto 22px;
+  }
+  .success-permalink-hint[hidden] { display: none; }
+
+  /* ─── Your submissions ──────────────────────────── */
+  .your-submissions {
+    margin-bottom: 20px;
+    padding: 16px 18px;
+    background: var(--white);
+    border: 1px solid var(--stone);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+  .your-submissions[hidden] { display: none; }
+  .your-submissions h2 {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ash);
+    margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .your-submissions .clear {
+    background: none; border: 0; cursor: pointer;
+    font: inherit; font-size: 11px;
+    color: var(--ash); text-transform: none; letter-spacing: 0;
+    padding: 2px 6px; border-radius: 6px;
+  }
+  .your-submissions .clear:hover { color: var(--ink); background: var(--parchment); }
+  .submission-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--stone);
+  }
+  .submission-row:first-of-type { border-top: 0; }
+  .submission-row .title {
+    flex: 1; min-width: 0;
+    font-size: 13.5px; color: var(--ink); font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .submission-row .title.is-link { cursor: pointer; }
+  .submission-row .title.is-link:hover {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--ink) 30%, transparent);
+    text-underline-offset: 0.18em;
+  }
+  .submission-row .when { font-size: 11.5px; color: var(--ash); flex-shrink: 0; }
+  .submission-row .status { flex-shrink: 0; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 1px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 500;
+    border: 1px solid var(--stone);
+    background: var(--white);
+    color: var(--graphite);
+  }
+  .status-pill.awaiting {
+    background: var(--parchment); color: var(--ash);
+  }
+  .status-pill.awaiting::before {
+    content: "";
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--amber);
+    display: inline-block;
+  }
+  .status-pill.shipped {
+    background: var(--mint); color: var(--green-soft);
+    border-color: rgba(34,197,94,0.24);
+  }
 
   /* ─── Status messages ────────────────────────────── */
   .msg {
@@ -622,8 +706,8 @@
     position: fixed; inset: 0;
     background: rgba(9,9,11,0.42);
     backdrop-filter: blur(2px);
-    display: flex; align-items: flex-start; justify-content: center;
-    padding: 64px 16px; overflow-y: auto; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    padding: 32px 16px; z-index: 100;
   }
   .modal-bg[hidden] { display: none; }
   .modal {
@@ -632,6 +716,8 @@
     border-radius: var(--radius);
     max-width: 720px; width: 100%; padding: 28px;
     box-shadow: var(--shadow-lg);
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
   }
   .modal h2 {
     margin: 0 0 10px;
@@ -674,6 +760,20 @@
     transition: color var(--transition), background var(--transition);
   }
   .modal-close:hover { color: var(--ink); background: var(--parchment); }
+
+  /* ─── Confirm modal ─────────────────────────────── */
+  #confirm-modal { align-items: center; padding: 16px; }
+  .modal.is-confirm {
+    max-width: 420px; padding: 24px;
+  }
+  .modal.is-confirm h2 { font-size: 17px; margin-bottom: 8px; }
+  .modal.is-confirm p {
+    font-size: 13.5px; color: var(--ash); line-height: 1.6;
+    margin: 0 0 18px;
+  }
+  .modal.is-confirm .actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
 
   .modal-link {
     display: inline-flex; align-items: center; gap: 6px;
@@ -830,6 +930,13 @@
 
   <!-- ─── Submit view ────────────────────────────────── -->
   <section class="view" id="view-submit" hidden>
+    <div class="your-submissions" id="your-submissions" hidden>
+      <h2>
+        Your submissions
+        <button type="button" class="clear" id="btn-clear-submissions" title="Forget the list on this device">Clear</button>
+      </h2>
+      <div id="your-submissions-list"></div>
+    </div>
     <form class="form-card" id="issue-form" novalidate>
       <div class="stepper" aria-hidden="true">
         <span class="step active" data-step="1"><span class="num">1</span> The basics</span>
@@ -1009,6 +1116,18 @@
         </div>
         <h2>Thanks — got it.</h2>
         <p id="success-detail">Your feedback is in. We'll triage it within a couple of days. If you left an email, we'll reach out if we have questions or when it ships.</p>
+        <div class="success-permalink" id="success-permalink" hidden>
+          <code id="success-permalink-url"></code>
+          <button type="button" class="modal-link" id="btn-copy-permalink" title="Copy permalink">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+              <path d="M6.5 9.5 9.5 6.5"/>
+              <path d="M7 4.5h-1A2.5 2.5 0 0 0 3.5 7v0A2.5 2.5 0 0 0 6 9.5h1"/>
+              <path d="M9 11.5h1A2.5 2.5 0 0 0 12.5 9v0A2.5 2.5 0 0 0 10 6.5H9"/>
+            </svg>
+            <span class="modal-link-label">Copy</span>
+          </button>
+        </div>
+        <p class="success-permalink-hint" id="success-permalink-hint" hidden>Save this link — once we triage, it'll open your submission directly.</p>
         <div class="actions">
           <button type="button" class="secondary" id="btn-view-roadmap">View the roadmap</button>
           <button type="button" class="primary" id="btn-submit-another">Submit another</button>
@@ -1043,6 +1162,18 @@
 <footer class="site-foot">
   © <span id="foot-year"></span> Calliope RM
 </footer>
+
+<!-- ─── Confirm modal ────────────────────────────────── -->
+<div class="modal-bg" id="confirm-modal" hidden role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal is-confirm">
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-message"></p>
+    <div class="actions">
+      <button type="button" class="secondary" id="confirm-cancel"></button>
+      <button type="button" class="primary" id="confirm-ok"></button>
+    </div>
+  </div>
+</div>
 
 <!-- ─── Card detail modal ─────────────────────────────── -->
 <div class="modal-bg" id="modal" hidden role="dialog" aria-modal="true">
@@ -1080,6 +1211,45 @@
   // ─── FOOTER YEAR ─────────────────────────────────────────────────
   document.getElementById('foot-year').textContent = new Date().getFullYear();
 
+  // ─── CONFIRM MODAL ───────────────────────────────────────────────
+  // Promise-based replacement for window.confirm — returns true on OK,
+  // false on cancel / backdrop / Escape. Used everywhere we need a
+  // yes/no prompt so we never fall back to the native browser dialog.
+  const confirmBg     = document.getElementById('confirm-modal');
+  const confirmTitle  = document.getElementById('confirm-title');
+  const confirmMsg    = document.getElementById('confirm-message');
+  const confirmOk     = document.getElementById('confirm-ok');
+  const confirmCancel = document.getElementById('confirm-cancel');
+  let confirmResolver = null;
+  let confirmPrevFocus = null;
+
+  function confirmModal({ title = 'Are you sure?', message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel' } = {}) {
+    confirmTitle.textContent = title;
+    confirmMsg.textContent = message;
+    confirmOk.textContent = confirmLabel;
+    confirmCancel.textContent = cancelLabel;
+    confirmPrevFocus = document.activeElement;
+    confirmBg.hidden = false;
+    confirmCancel.focus();
+    return new Promise((resolve) => { confirmResolver = resolve; });
+  }
+  function settleConfirm(value) {
+    if (confirmResolver) { confirmResolver(value); confirmResolver = null; }
+    confirmBg.hidden = true;
+    if (confirmPrevFocus && confirmPrevFocus.focus) confirmPrevFocus.focus();
+    confirmPrevFocus = null;
+  }
+  confirmOk.addEventListener('click', () => settleConfirm(true));
+  confirmCancel.addEventListener('click', () => settleConfirm(false));
+  confirmBg.addEventListener('click', (e) => { if (e.target === confirmBg) settleConfirm(false); });
+  // Escape always cancels. Enter is left to the browser so it activates
+  // whichever button currently has focus — defaulting to Cancel keeps
+  // accidental keyboard presses from firing destructive actions.
+  document.addEventListener('keydown', (e) => {
+    if (confirmBg.hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); settleConfirm(false); }
+  });
+
   // ─── THEME ───────────────────────────────────────────────────────
   const themeKey = 'calliope-theme';
   const setTheme = (t) => {
@@ -1116,6 +1286,10 @@
       if (!res.ok) throw new Error('Failed to load');
       boardData = await res.json();
       renderBoard();
+      // Re-render the submissions section now that we know which items
+      // are publicly visible — pre-board, everything would render as
+      // "Awaiting triage" even if it's actually already on the roadmap.
+      try { renderYourSubmissions(); } catch {}
       maybeOpenFromHash();
     } catch (e) {
       boardContent.innerHTML = '<div class="error-state">Could not load roadmap. Please refresh.</div>';
@@ -1575,10 +1749,96 @@
 
   showStep(1);
 
-  const successState   = document.getElementById('success-state');
-  const successDetail  = document.getElementById('success-detail');
-  const stepperEl      = form.querySelector('.stepper');
-  const formActionsEl  = form.querySelector('.form-actions');
+  const successState        = document.getElementById('success-state');
+  const successDetail       = document.getElementById('success-detail');
+  const successPermalink    = document.getElementById('success-permalink');
+  const successPermalinkUrl = document.getElementById('success-permalink-url');
+  const successPermalinkHint = document.getElementById('success-permalink-hint');
+  const stepperEl           = form.querySelector('.stepper');
+  const formActionsEl       = form.querySelector('.form-actions');
+
+  // ─── YOUR SUBMISSIONS (localStorage) ─────────────────────────────
+  const SUB_KEY = 'calliope-submissions';
+  const SUB_MAX = 12;
+
+  function readSubmissions() {
+    try {
+      const v = JSON.parse(localStorage.getItem(SUB_KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch { return []; }
+  }
+  function writeSubmissions(list) {
+    try { localStorage.setItem(SUB_KEY, JSON.stringify(list.slice(0, SUB_MAX))); } catch {}
+  }
+  function recordSubmission(number, title) {
+    if (!number) return;
+    const list = readSubmissions().filter(s => s.number !== number);
+    list.unshift({ number, title, submittedAt: new Date().toISOString() });
+    writeSubmissions(list);
+  }
+
+  function permalinkFor(number) {
+    return `${location.origin}${location.pathname}#issue=${number}`;
+  }
+
+  function renderYourSubmissions() {
+    const wrap = document.getElementById('your-submissions');
+    const list = document.getElementById('your-submissions-list');
+    const items = readSubmissions();
+    if (!items.length) { wrap.hidden = true; return; }
+
+    const onBoardByNumber = new Map();
+    if (boardData) {
+      for (const col of boardData.columns) {
+        for (const issue of col.issues) onBoardByNumber.set(issue.number, { col, issue });
+      }
+    }
+
+    list.innerHTML = items.map(s => {
+      const found = onBoardByNumber.get(s.number);
+      const when = formatDate(s.submittedAt);
+      let status, titleClass;
+      if (found) {
+        const colName = found.col.name;
+        const closed  = found.issue.state === 'closed';
+        const cls     = closed ? 'shipped' : '';
+        status = `<span class="status-pill ${cls}">${closed ? '✓ ' : ''}${escape(colName)}</span>`;
+        titleClass = 'title is-link';
+      } else {
+        status = `<span class="status-pill awaiting">Awaiting triage</span>`;
+        titleClass = 'title';
+      }
+      const title = escape(s.title || `Issue #${s.number}`);
+      const dataLink = found ? `data-open="${s.number}"` : '';
+      return `
+        <div class="submission-row">
+          <span class="${titleClass}" ${dataLink}>${title}</span>
+          <span class="when">${escape(when)}</span>
+          <span class="status">${status}</span>
+        </div>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.title.is-link').forEach(el => {
+      el.addEventListener('click', () => openModal(parseInt(el.dataset.open, 10)));
+    });
+
+    wrap.hidden = false;
+  }
+
+  document.getElementById('btn-clear-submissions').addEventListener('click', async () => {
+    const ok = await confirmModal({
+      title: 'Clear your submissions list?',
+      message: "This only forgets the list on this device — your submissions stay in our system and the team will still get back to you.",
+      confirmLabel: 'Clear list',
+      cancelLabel: 'Keep it',
+    });
+    if (!ok) return;
+    try { localStorage.removeItem(SUB_KEY); } catch {}
+    renderYourSubmissions();
+  });
+
+  renderYourSubmissions();
 
   function showSuccess(issueNumber) {
     panels.forEach(p => p.hidden = true);
@@ -1589,9 +1849,40 @@
     successDetail.textContent = issueNumber
       ? `Submitted as #${issueNumber}. We'll triage it within a couple of days. If you left an email, we'll reach out if we have questions or when it ships.`
       : `Your feedback is in. We'll triage it within a couple of days. If you left an email, we'll reach out if we have questions or when it ships.`;
+
+    if (issueNumber) {
+      const url = permalinkFor(issueNumber);
+      successPermalinkUrl.textContent = url;
+      successPermalink.dataset.url = url;
+      successPermalink.hidden = false;
+      successPermalinkHint.hidden = false;
+    } else {
+      successPermalink.hidden = true;
+      successPermalinkHint.hidden = true;
+    }
+
     successState.hidden = false;
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+
+  // Copy permalink from the success panel.
+  document.getElementById('btn-copy-permalink').addEventListener('click', async (e) => {
+    const url = successPermalink.dataset.url;
+    if (!url) return;
+    const btn = e.currentTarget;
+    const label = btn.querySelector('.modal-link-label');
+    try {
+      await navigator.clipboard.writeText(url);
+      label.textContent = 'Copied';
+      btn.classList.add('is-copied');
+      setTimeout(() => { label.textContent = 'Copy'; btn.classList.remove('is-copied'); }, 1600);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch {}
+      ta.remove();
+    }
+  });
 
   function resetForm() {
     form.reset();
@@ -1634,6 +1925,8 @@
       });
       const out = await res.json().catch(() => ({}));
       if (res.ok) {
+        recordSubmission(out.number, form.elements.title.value.trim());
+        renderYourSubmissions();
         showSuccess(out.number);
       } else {
         formMsg.className = 'msg err';
