@@ -281,6 +281,60 @@
   .summary-card dt { font-weight: 600; color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; margin-top: .5rem; }
   .summary-card dt:first-child { margin-top: 0; }
   .summary-card dd { margin: .15rem 0 0; }
+
+  /* ─── Image uploader ────────────────────────────── */
+  .dropzone {
+    margin-top: .5rem;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    background: var(--bg);
+    text-align: center;
+    color: var(--muted);
+    font-size: .9rem;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone:hover, .dropzone.drag {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+    color: var(--text);
+  }
+  .dropzone strong { color: var(--accent); font-weight: 600; }
+  .dropzone input[type=file] { display: none; }
+  .dropzone .dz-hint { font-size: .8rem; margin-top: .25rem; }
+
+  .thumbs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: .5rem;
+    margin-top: .5rem;
+  }
+  .thumbs:empty { display: none; }
+  .thumb {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    aspect-ratio: 1;
+    background: var(--surface);
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .rm {
+    position: absolute; top: 4px; right: 4px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(0,0,0,.65); color: white;
+    border: 0; cursor: pointer; font-size: 14px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .thumb .rm:hover { background: var(--danger); }
+  .thumb .name {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,.7));
+    color: white; font-size: .7rem;
+    padding: 1rem .4rem .3rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   button.primary {
     margin-top: 1.25rem; background: var(--success); color: white;
     border: 0; padding: .6rem 1.2rem; border-radius: 6px;
@@ -386,6 +440,15 @@
           <textarea name="description" required maxlength="3000"
             placeholder="Describe the situation in your own words. Don't worry about structure — we'll ask for specifics on the next step if needed."></textarea>
           <p class="field-help" id="description-help">A few sentences is plenty. You can add screenshots, repro steps, and context next.</p>
+        </label>
+
+        <label id="screenshots-label">Screenshots <span class="opt">(optional, but recommended for visual issues)</span>
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+            <div><strong>Drop images here</strong>, click to browse, or paste from clipboard</div>
+            <div class="dz-hint">PNG, JPG, GIF, or WebP — up to 4 files, 10MB each</div>
+          </div>
+          <div class="thumbs" id="thumbs"></div>
         </label>
       </div>
 
@@ -664,6 +727,86 @@
   const form = document.getElementById('issue-form');
   const formMsg = document.getElementById('form-msg');
   const typeInput = form.elements.type;
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('file-input');
+  const thumbsEl = document.getElementById('thumbs');
+
+  const MAX_FILES = 4;
+  const MAX_SIZE = 10 * 1024 * 1024;
+  const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  let attachedFiles = [];
+
+  function renderThumbs() {
+    thumbsEl.innerHTML = '';
+    attachedFiles.forEach((f, idx) => {
+      const url = URL.createObjectURL(f);
+      const div = document.createElement('div');
+      div.className = 'thumb';
+      div.innerHTML = `
+        <img src="${url}" alt="">
+        <button type="button" class="rm" aria-label="Remove">&times;</button>
+        <div class="name">${escape(f.name || `image-${idx + 1}`)}</div>
+      `;
+      div.querySelector('.rm').addEventListener('click', (e) => {
+        e.stopPropagation();
+        URL.revokeObjectURL(url);
+        attachedFiles.splice(idx, 1);
+        renderThumbs();
+      });
+      thumbsEl.appendChild(div);
+    });
+  }
+
+  function addFiles(files) {
+    for (const f of files) {
+      if (attachedFiles.length >= MAX_FILES) {
+        flashMsg(`Up to ${MAX_FILES} images. Remove one to add another.`, 'err');
+        break;
+      }
+      if (!ALLOWED_MIMES.includes(f.type)) {
+        flashMsg(`"${f.name}" isn't a supported image type.`, 'err');
+        continue;
+      }
+      if (f.size > MAX_SIZE) {
+        flashMsg(`"${f.name}" is over 10MB.`, 'err');
+        continue;
+      }
+      attachedFiles.push(f);
+    }
+    renderThumbs();
+  }
+
+  function flashMsg(text, kind) {
+    formMsg.className = 'msg ' + kind;
+    formMsg.textContent = text;
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => { addFiles(e.target.files); fileInput.value = ''; });
+  ['dragenter', 'dragover'].forEach(ev =>
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add('drag'); })
+  );
+  ['dragleave', 'drop'].forEach(ev =>
+    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove('drag'); })
+  );
+  dropzone.addEventListener('drop', (e) => {
+    if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+  });
+  document.addEventListener('paste', (e) => {
+    if (document.getElementById('view-submit').hidden) return;
+    const items = e.clipboardData?.items || [];
+    const imgs = [];
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (blob) {
+          const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+          imgs.push(new File([blob], `pasted-${Date.now()}.${ext}`, { type: blob.type }));
+        }
+      }
+    }
+    if (imgs.length) { e.preventDefault(); addFiles(imgs); }
+  });
   const typeCards = form.querySelectorAll('.type-card');
   const descriptionLabel = document.getElementById('description-label');
   const descriptionHelp = document.getElementById('description-help');
@@ -809,7 +952,10 @@
       })
       .filter(Boolean)
       .join('');
-    summaryCard.innerHTML = rows || '<dd>Nothing to show yet.</dd>';
+    const attachRow = attachedFiles.length
+      ? `<dt>Screenshots</dt><dd>${attachedFiles.length} image${attachedFiles.length > 1 ? 's' : ''} attached</dd>`
+      : '';
+    summaryCard.innerHTML = (rows + attachRow) || '<dd>Nothing to show yet.</dd>';
   }
 
   function syncHiddenContext() {
@@ -835,13 +981,13 @@
     btnSubmit.disabled = true;
     btnSubmit.textContent = 'Sending…';
 
-    const data = Object.fromEntries(new FormData(form));
+    const fd = new FormData(form);
+    attachedFiles.forEach(f => fd.append('attachments[]', f, f.name));
 
     try {
       const res = await fetch(`${ENDPOINT}/api/submit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: fd,
       });
       const out = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -849,6 +995,8 @@
         formMsg.textContent = 'Thanks! Your feedback was submitted. The team will triage it shortly.';
         form.reset();
         setType('');
+        attachedFiles = [];
+        renderThumbs();
         showStep(1);
       } else {
         formMsg.className = 'msg err';
