@@ -10,6 +10,7 @@ No database. No auth system. No admin panel. Your team works in GitHub like norm
 - [Deployment options](#deployment-options)
 - [The submission form](#the-submission-form)
 - [Image uploads](#image-uploads)
+- [Submitter PII handling](#submitter-pii-handling)
 - [Setup — Cloudflare Worker](#setup--cloudflare-worker)
 - [Setup — VPS with nginx + PHP-FPM](#setup--vps-with-nginx--php-fpm)
 - [Label reference](#label-reference)
@@ -66,11 +67,31 @@ The PHP path is the one to choose if you want screenshots embedded in your issue
 
 `portal.html` ships with a 3-step submission flow optimized for response rate:
 
-1. **The basics** — type (bug / feature / improvement), one-sentence summary, and a freeform description. Optional screenshots (drag-and-drop, click, or paste from clipboard). Only type, summary, and description are required.
-2. **Add detail** *(optional)* — type-specific fields (repro steps and "is this blocking you?" for bugs; use case and success criteria for features/improvements). Contact info and routing context (area, environment, links) live behind disclosure blocks.
+1. **The basics** — type (bug / feature / improvement), one-sentence summary, freeform description, **submitter name and email**, and optional screenshots (drag-and-drop, click, or paste from clipboard). Required: type, summary, description, name, email.
+2. **Add detail** *(optional)* — type-specific fields (repro steps and "is this blocking you?" for bugs; use case and success criteria for features/improvements). Routing context (area, environment, links) and "About you" (company, role) live behind disclosure blocks.
 3. **Review & send** — a summary of everything captured before submitting.
 
 There is no severity field. Triage decides priority — letting users self-assign severity is an anti-pattern (everyone picks "High").
+
+**Visual:** the portal uses the Clio KB design system (Geist font, zinc-tone palette, soft borders) and ships with a light/dark mode toggle in the header. Theme persists in `localStorage` and follows `prefers-color-scheme` on first visit.
+
+## Submitter PII handling
+
+Name and email are required so triage always has a way to follow up — but the data should never appear on the public roadmap. The flow:
+
+- `submit.php` writes a `## Submitter` section (name, email, company, role) and a `## Submission metadata` section (page URL, user agent, language, screen size, time zone) into the GitHub issue body, wrapped in `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` markers.
+- **Team view (GitHub):** GitHub's renderer hides the HTML comments themselves but still renders the markdown sections between them. You see the full submitter info in the issue UI, in `gh issue view`, and via the API.
+- **Customer view (`/api/board` and `/api/comments`):** `board.php` and `comments.php` strip everything between the markers (and any other HTML comments) **server-side** before returning the JSON. The `body` field on the wire never contains PII — anyone inspecting the network response in browser devtools sees only the public sections.
+- **Defense in depth:** the modal's `renderBody()` also strips the marker block before inserting into the DOM, so even if a body containing markers somehow reached the client (e.g. via a future endpoint that didn't apply the strip), the rendered output would still be clean.
+
+To migrate older issues that pre-date this scheme, wrap the submission metadata section in markers via `gh issue edit`:
+
+```bash
+gh issue view N --json body --jq .body > body.md
+# insert <!-- CUSTOMER_HIDE_START --> before "## Submission metadata"
+# append <!-- CUSTOMER_HIDE_END --> at end
+gh issue edit N --body-file body.md
+```
 
 ## Image uploads
 
@@ -309,7 +330,7 @@ The card modal fetches `/api/comments?issue=N` when opened and renders comments 
 - **All comments from team members** — anyone whose `author_association` on GitHub is `OWNER`, `MEMBER`, or `COLLABORATOR`.
 - **Any comment containing the marker `<!-- public -->`** — useful for surfacing a customer's own follow-up reply, or for a team member commenting from an account without write access.
 
-The marker is stripped from the rendered output, so you can drop it anywhere in the comment body. Internal-only comments from team members can be hidden by wrapping them in `<!-- ... -->` HTML comments — the renderer strips those before display.
+The marker is stripped from the rendered output, so you can drop it anywhere in the comment body. Internal-only notes inside otherwise customer-visible comments can be wrapped in `<!-- ... -->` HTML comments or in the `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` block — both forms are stripped server-side before the comment is ever sent to the client.
 
 Responses are cached per issue for 60 seconds (configurable via `COMMENTS_CACHE_TTL`).
 
@@ -381,7 +402,8 @@ The matching client-side caps live near the top of the `<script>` in `portal.htm
 - **Random filenames.** Uploaded images are stored under `<random-token>.webp` so URLs aren't enumerable.
 - **Honeypot.** Both backends silently accept (and discard) submissions where the hidden `website` field is filled — catches lazy bots.
 - **Rate-limiting.** For real spam, add [Cloudflare Turnstile](https://www.cloudflare.com/products/turnstile/) (free) — one script tag in the form and a verify call in the backend. nginx's `limit_req_zone` is also a fine first line of defense for the PHP path.
-- **Sanitize what's exposed.** The Worker's `transformIssue` controls what the board endpoint returns. Internal labels and comment threads are not exposed by default.
+- **Sanitize what's exposed.** The Worker's `transformIssue` and `board.php`'s `transform_issue` control what the board endpoint returns. Internal labels and comment threads are not exposed by default.
+- **PII never leaves the server in the read APIs.** `board.php` and `comments.php` strip the `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` block from each issue/comment body before returning it. Verify with browser devtools → Network → check the raw `/api/board` response after submitting a test ticket.
 
 ## Troubleshooting
 
