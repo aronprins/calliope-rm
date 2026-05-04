@@ -185,6 +185,102 @@
   .deferred-section[hidden] { display: none; }
   .conditional-section[hidden] { display: none; }
   .hp { position: absolute; left: -9999px; }
+
+  /* ─── Stepper ────────────────────────────────────── */
+  .stepper {
+    display: flex; align-items: center; gap: .75rem;
+    margin: 0 0 1.25rem;
+    font-size: .85rem;
+  }
+  .stepper .step {
+    display: inline-flex; align-items: center; gap: .5rem;
+    color: var(--muted); font-weight: 600;
+  }
+  .stepper .step .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--border-soft); color: var(--muted);
+    font-size: .75rem;
+  }
+  .stepper .step.active { color: var(--text); }
+  .stepper .step.active .num { background: var(--accent); color: white; }
+  .stepper .step.done .num { background: var(--success); color: white; }
+  .stepper .sep { flex: 0 0 24px; height: 1px; background: var(--border); }
+
+  .step-panel[hidden] { display: none; }
+
+  .form-actions {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: .75rem; margin-top: 1.25rem;
+    border-top: 1px solid var(--border-soft); padding-top: 1.25rem;
+  }
+  .form-actions .left, .form-actions .right { display: flex; gap: .5rem; align-items: center; }
+  button.secondary {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); padding: .55rem 1rem; border-radius: 6px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  button.ghost {
+    background: none; border: 0; color: var(--muted);
+    padding: .55rem .5rem; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.ghost:hover { color: var(--text); }
+
+  .type-cards {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem;
+    margin-top: .35rem;
+  }
+  @media (max-width: 600px) { .type-cards { grid-template-columns: 1fr; } }
+  .type-card {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: .85rem 1rem; cursor: pointer;
+    background: var(--surface); text-align: left;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .type-card:hover { border-color: var(--accent); }
+  .type-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+    background: var(--accent-bg);
+  }
+  .type-card .t-title { font-weight: 600; font-size: .95rem; margin: 0 0 .15rem; display: flex; align-items: center; gap: .4rem; }
+  .type-card .t-desc { color: var(--muted); font-size: .82rem; margin: 0; }
+  .type-card .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .type-card[data-type="bug"] .dot { background: var(--danger); }
+  .type-card[data-type="feature"] .dot { background: var(--accent); }
+  .type-card[data-type="improvement"] .dot { background: var(--success); }
+
+  details.optional-block {
+    margin-top: 1rem;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  details.optional-block > summary {
+    list-style: none; cursor: pointer;
+    padding: .75rem 1rem;
+    font-weight: 600; font-size: .9rem;
+    color: var(--text);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  details.optional-block > summary::-webkit-details-marker { display: none; }
+  details.optional-block > summary::after {
+    content: "+"; color: var(--muted); font-weight: 400; font-size: 1.1rem;
+  }
+  details.optional-block[open] > summary::after { content: "−"; }
+  details.optional-block > summary .hint { color: var(--muted); font-weight: 400; font-size: .82rem; margin-left: .5rem; }
+  details.optional-block .body { padding: 0 1rem 1rem; }
+  details.optional-block .body label:first-child { margin-top: .25rem; }
+
+  .summary-card {
+    background: var(--bg); border: 1px solid var(--border-soft);
+    border-radius: 8px; padding: 1rem; margin-bottom: 1rem;
+    font-size: .9rem;
+  }
+  .summary-card dt { font-weight: 600; color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; margin-top: .5rem; }
+  .summary-card dt:first-child { margin-top: 0; }
+  .summary-card dd { margin: .15rem 0 0; }
   button.primary {
     margin-top: 1.25rem; background: var(--success); color: white;
     border: 0; padding: .6rem 1.2rem; border-radius: 6px;
@@ -254,113 +350,62 @@
   <!-- ─── Submit view ────────────────────────────────── -->
   <section class="view" id="view-submit" hidden>
     <form class="form-card" id="issue-form" novalidate>
-      <p class="form-intro">Capture enough detail for the team and automation to reproduce, diagnose, and resolve the request without a long back-and-forth.</p>
-      <p class="progress-note" id="progress-note">Start with the submission type and a short summary. The form will expand with only the fields needed for that request.</p>
+      <div class="stepper" aria-hidden="true">
+        <span class="step active" data-step="1"><span class="num">1</span> The basics</span>
+        <span class="sep"></span>
+        <span class="step" data-step="2"><span class="num">2</span> Add detail <span class="opt">(optional)</span></span>
+        <span class="sep"></span>
+        <span class="step" data-step="3"><span class="num">3</span> Review &amp; send</span>
+      </div>
 
-      <fieldset>
-        <legend>Ticket Routing</legend>
-        <div class="form-grid">
-          <label class="span-4">Type
-            <select name="type" required>
-              <option value="">— Select —</option>
-              <option value="bug">Bug</option>
-              <option value="feature">Feature request</option>
-              <option value="improvement">Improvement</option>
-            </select>
-          </label>
-          <label class="span-8">Short summary
-            <input name="title" type="text" required maxlength="200" placeholder="One sentence that describes the problem or request">
-          </label>
-        </div>
-      </fieldset>
-
-      <div id="deferred-fields" class="deferred-section" hidden>
-        <fieldset>
-          <legend>Requester</legend>
-          <div class="form-grid">
-            <label class="span-6">Name
-              <input name="name" type="text" autocomplete="name" required maxlength="100">
-            </label>
-            <label class="span-6">Email <span class="opt">(required if we should contact you)</span>
-              <input name="email" type="email" autocomplete="email" maxlength="200">
-            </label>
-            <label class="span-6">Company <span class="opt">(optional)</span>
-              <input name="company" type="text" autocomplete="organization" maxlength="120">
-            </label>
-            <label class="span-6">Role / team <span class="opt">(optional)</span>
-              <input name="role" type="text" maxlength="120" placeholder="e.g. Support lead, Finance ops, Admin">
-            </label>
-            <label class="span-6">Can we contact you for follow-up?
-              <select name="contactConsent" required>
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </select>
-            </label>
+      <!-- Step 1: the basics -->
+      <div class="step-panel" data-panel="1">
+        <label>What kind of feedback is this?
+          <input type="hidden" name="type" required>
+          <div class="type-cards" role="radiogroup" aria-label="Submission type">
+            <button type="button" class="type-card" data-type="bug" role="radio" aria-checked="false">
+              <p class="t-title"><span class="dot"></span> Bug</p>
+              <p class="t-desc">Something is broken or behaving incorrectly.</p>
+            </button>
+            <button type="button" class="type-card" data-type="feature" role="radio" aria-checked="false">
+              <p class="t-title"><span class="dot"></span> Feature request</p>
+              <p class="t-desc">A new capability you'd like us to build.</p>
+            </button>
+            <button type="button" class="type-card" data-type="improvement" role="radio" aria-checked="false">
+              <p class="t-title"><span class="dot"></span> Improvement</p>
+              <p class="t-desc">Something that works, but could be better.</p>
+            </button>
           </div>
-        </fieldset>
+        </label>
 
-        <fieldset>
-          <legend>Routing Context</legend>
-          <div class="form-grid">
-            <label class="span-4">Product area
-              <select name="area" required>
-                <option value="">— Select —</option>
-                <option value="auth">Authentication</option>
-                <option value="billing">Billing</option>
-                <option value="dashboard">Dashboard</option>
-                <option value="integrations">Integrations</option>
-                <option value="notifications">Notifications</option>
-                <option value="api">API</option>
-                <option value="export">Export / reporting</option>
-                <option value="mobile">Mobile</option>
-                <option value="performance">Performance</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-            <label class="span-4" id="severity-label">Severity / urgency
-              <select name="severity" required>
-                <option value="">— Select —</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
-            </label>
-            <label class="span-4 conditional-section" id="environment-label" hidden>Environment
-              <select name="environment" data-required-types="bug">
-                <option value="">— Select —</option>
-                <option value="production">Production</option>
-                <option value="staging">Staging</option>
-                <option value="sandbox">Sandbox / test</option>
-                <option value="local">Local / development</option>
-                <option value="unknown">Not sure</option>
-              </select>
-            </label>
-          </div>
-          <label id="business-context-label">Business context
-          <textarea name="businessContext" required maxlength="1500"
-            placeholder="Who is affected, what workflow is blocked, and why this matters right now."></textarea>
-          <p class="field-help">This helps agents judge priority and choose a resolution path.</p>
+        <label>Short summary
+          <input name="title" type="text" required maxlength="200" placeholder="One sentence that describes the problem or request">
+        </label>
+
+        <label id="description-label">Tell us what's going on
+          <textarea name="description" required maxlength="3000"
+            placeholder="Describe the situation in your own words. Don't worry about structure — we'll ask for specifics on the next step if needed."></textarea>
+          <p class="field-help" id="description-help">A few sentences is plenty. You can add screenshots, repro steps, and context next.</p>
+        </label>
+      </div>
+
+      <!-- Step 2: optional detail -->
+      <div class="step-panel" data-panel="2" hidden>
+        <p class="form-intro" id="step2-intro">Anything you add here helps us triage faster — but everything is optional.</p>
+
+        <!-- Bug-specific -->
+        <div class="conditional-section" id="section-bug" hidden>
+          <label>Steps to reproduce <span class="opt">(optional)</span>
+            <textarea name="reproductionSteps" maxlength="2500"
+              placeholder="1. Go to…&#10;2. Click…&#10;3. Notice that…"></textarea>
           </label>
-        </fieldset>
-
-        <fieldset class="conditional-section" id="section-bug" hidden>
-          <legend>Bug Evidence</legend>
-          <div class="form-grid">
-            <label class="span-6">What happened?
-              <textarea name="actualResult" data-required-types="bug" maxlength="2000"
-                placeholder="Describe the failure, error message, or incorrect behavior."></textarea>
-            </label>
-            <label class="span-6">What should have happened?
-              <textarea name="expectedResult" data-required-types="bug" maxlength="1500"
-                placeholder="Describe the expected outcome."></textarea>
-            </label>
-            <label class="span-12">Steps to reproduce
-              <textarea name="reproductionSteps" data-required-types="bug" maxlength="2500"
-                placeholder="List the exact steps, inputs, and any timing details needed to reproduce."></textarea>
-            </label>
-            <label class="span-4">How often does it happen?
-              <select name="frequency" data-required-types="bug">
+          <label>What did you expect to happen? <span class="opt">(optional)</span>
+            <textarea name="expectedResult" maxlength="1500"
+              placeholder="Describe the expected outcome."></textarea>
+          </label>
+          <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <label>How often does it happen? <span class="opt">(optional)</span>
+              <select name="frequency">
                 <option value="">— Select —</option>
                 <option value="always">Always</option>
                 <option value="often">Often</option>
@@ -368,79 +413,100 @@
                 <option value="once">Only once</option>
               </select>
             </label>
-            <label class="span-4">When did you first notice it?
-              <input name="startedAt" type="text" maxlength="120" placeholder="e.g. After the April release">
-            </label>
-            <label class="span-4">Workaround <span class="opt">(optional)</span>
-              <textarea name="workaround" maxlength="1500"
-                placeholder="Any temporary workaround that reduces impact."></textarea>
-            </label>
-          </div>
-        </fieldset>
-
-        <fieldset class="conditional-section" id="section-feature" hidden>
-          <legend>Feature Request Context</legend>
-          <div class="form-grid">
-            <label class="span-12">Who needs this feature?
-              <textarea name="featureUsers" data-required-types="feature" maxlength="1500"
-                placeholder="Describe the user, team, or segment that needs this capability."></textarea>
-            </label>
-            <label class="span-12">What are they trying to do?
-              <textarea name="featureUseCase" data-required-types="feature" maxlength="2000"
-                placeholder="Describe the job to be done and when this need shows up."></textarea>
-            </label>
-            <label class="span-12">Requested capability
-              <textarea name="requestedOutcome" data-required-types="feature" maxlength="2000"
-                placeholder="Describe the feature or capability you want added."></textarea>
-            </label>
-            <label class="span-12">Success criteria
-              <textarea name="successCriteria" data-required-types="feature" maxlength="2000"
-                placeholder="What would success look like if this feature existed?"></textarea>
-            </label>
-            <label class="span-12">Alternatives considered <span class="opt">(optional)</span>
-              <textarea name="alternatives" maxlength="1500"
-                placeholder="Tools, workarounds, or competing approaches you considered."></textarea>
+            <label>Is this blocking you? <span class="opt">(optional)</span>
+              <select name="blocking">
+                <option value="">— Select —</option>
+                <option value="yes">Yes — I can't continue</option>
+                <option value="workaround">I have a workaround</option>
+                <option value="no">No — minor annoyance</option>
+              </select>
             </label>
           </div>
-        </fieldset>
+        </div>
 
-        <fieldset class="conditional-section" id="section-improvement" hidden>
-          <legend>Improvement Context</legend>
-          <div class="form-grid">
-            <label class="span-12">What part of the current experience is not working well?
-              <textarea name="currentWorkflow" data-required-types="improvement" maxlength="2000"
-                placeholder="Describe the current workflow, friction, confusion, or inefficiency."></textarea>
-            </label>
-            <label class="span-12">What should change?
-              <textarea name="improvementChange" data-required-types="improvement" maxlength="2000"
-                placeholder="Describe the change that would make the current experience better."></textarea>
-            </label>
-            <label class="span-12">What would improve if this were fixed?
-              <textarea name="successCriteria" data-required-types="improvement" maxlength="2000"
-                placeholder="Describe the measurable improvement or outcome you expect."></textarea>
-            </label>
-            <label class="span-12">Current workaround <span class="opt">(optional)</span>
-              <textarea name="alternatives" maxlength="1500"
-                placeholder="Describe how you work around this today, if at all."></textarea>
-            </label>
-          </div>
-        </fieldset>
+        <!-- Feature/improvement-specific -->
+        <div class="conditional-section" id="section-feature-imp" hidden>
+          <label id="usecase-label">Who would benefit, and when? <span class="opt">(optional)</span>
+            <textarea name="featureUseCase" maxlength="2000"
+              placeholder="Describe the user or team and when this need comes up."></textarea>
+          </label>
+          <label id="success-label">What would 'good' look like? <span class="opt">(optional)</span>
+            <textarea name="successCriteria" maxlength="2000"
+              placeholder="What would change for you if we shipped this?"></textarea>
+          </label>
+          <label>How do you work around this today? <span class="opt">(optional)</span>
+            <textarea name="alternatives" maxlength="1500"
+              placeholder="Tools, workarounds, or competing approaches."></textarea>
+          </label>
+        </div>
 
-        <fieldset>
-          <legend>Additional Context</legend>
-          <div class="form-grid">
-            <label class="span-6">Links or references <span class="opt">(optional)</span>
+        <!-- Shared optional context -->
+        <details class="optional-block">
+          <summary>Where in the product? <span class="hint">— area, environment, links</span></summary>
+          <div class="body">
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 1rem;">
+              <label>Product area
+                <select name="area">
+                  <option value="">— Select —</option>
+                  <option value="auth">Authentication</option>
+                  <option value="billing">Billing</option>
+                  <option value="dashboard">Dashboard</option>
+                  <option value="integrations">Integrations</option>
+                  <option value="notifications">Notifications</option>
+                  <option value="api">API</option>
+                  <option value="export">Export / reporting</option>
+                  <option value="mobile">Mobile</option>
+                  <option value="performance">Performance</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label class="conditional-section" id="environment-wrap" hidden>Environment
+                <select name="environment">
+                  <option value="">— Select —</option>
+                  <option value="production">Production</option>
+                  <option value="staging">Staging</option>
+                  <option value="sandbox">Sandbox / test</option>
+                  <option value="local">Local / development</option>
+                  <option value="unknown">Not sure</option>
+                </select>
+              </label>
+            </div>
+            <label>Links or references
               <textarea name="references" maxlength="1500"
-                placeholder="Paste relevant URLs, record IDs, screenshots links, or related issue numbers."></textarea>
-            </label>
-            <label class="span-6">Additional notes <span class="opt">(optional)</span>
-              <textarea name="additionalNotes" maxlength="1500"
-                placeholder="Anything else a human or agent should know before trying to resolve this."></textarea>
+                placeholder="Paste relevant URLs, record IDs, screenshot links, or related issue numbers."></textarea>
             </label>
           </div>
-        </fieldset>
+        </details>
+
+        <details class="optional-block">
+          <summary>Want a reply? <span class="hint">— share your contact info</span></summary>
+          <div class="body">
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 1rem;">
+              <label>Name
+                <input name="name" type="text" autocomplete="name" maxlength="100">
+              </label>
+              <label>Email
+                <input name="email" type="email" autocomplete="email" maxlength="200" placeholder="you@company.com">
+              </label>
+              <label>Company
+                <input name="company" type="text" autocomplete="organization" maxlength="120">
+              </label>
+              <label>Role / team
+                <input name="role" type="text" maxlength="120" placeholder="e.g. Support lead, Admin">
+              </label>
+            </div>
+            <p class="field-help">If you leave an email, we'll assume it's OK to reach out about this submission.</p>
+          </div>
+        </details>
       </div>
 
+      <!-- Step 3: review -->
+      <div class="step-panel" data-panel="3" hidden>
+        <p class="form-intro">Quick check before sending.</p>
+        <dl class="summary-card" id="summary-card"></dl>
+      </div>
+
+      <!-- Hidden / system fields -->
       <input name="pageUrl" type="hidden">
       <input name="userAgent" type="hidden">
       <input name="language" type="hidden">
@@ -448,7 +514,17 @@
       <input name="timeZone" type="hidden">
       <input name="submittedAt" type="hidden">
       <input class="hp" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <button type="submit" class="primary">Submit</button>
+
+      <div class="form-actions">
+        <div class="left">
+          <button type="button" class="ghost" id="btn-back" hidden>← Back</button>
+        </div>
+        <div class="right">
+          <button type="button" class="secondary" id="btn-skip" hidden>Skip &amp; review</button>
+          <button type="button" class="secondary" id="btn-next" hidden>Add detail →</button>
+          <button type="submit" class="primary" id="btn-submit">Send feedback</button>
+        </div>
+      </div>
       <div id="form-msg" role="status" aria-live="polite"></div>
     </form>
   </section>
@@ -587,58 +663,153 @@
   // ─── SUBMIT FORM ─────────────────────────────────────────────────
   const form = document.getElementById('issue-form');
   const formMsg = document.getElementById('form-msg');
-  const deferredFields = document.getElementById('deferred-fields');
-  const progressNote = document.getElementById('progress-note');
-  const severityLabel = document.getElementById('severity-label');
-  const environmentLabel = document.getElementById('environment-label');
-  const businessContextLabel = document.getElementById('business-context-label');
   const typeInput = form.elements.type;
-  const conditionalSections = {
-    bug: document.getElementById('section-bug'),
-    feature: document.getElementById('section-feature'),
-    improvement: document.getElementById('section-improvement'),
+  const typeCards = form.querySelectorAll('.type-card');
+  const descriptionLabel = document.getElementById('description-label');
+  const descriptionHelp = document.getElementById('description-help');
+  const step2Intro = document.getElementById('step2-intro');
+  const sectionBug = document.getElementById('section-bug');
+  const sectionFeatureImp = document.getElementById('section-feature-imp');
+  const environmentWrap = document.getElementById('environment-wrap');
+  const usecaseLabel = document.getElementById('usecase-label');
+  const successLabel = document.getElementById('success-label');
+  const panels = form.querySelectorAll('.step-panel');
+  const stepperSteps = form.querySelectorAll('.stepper .step');
+  const btnBack = document.getElementById('btn-back');
+  const btnNext = document.getElementById('btn-next');
+  const btnSkip = document.getElementById('btn-skip');
+  const btnSubmit = document.getElementById('btn-submit');
+  const summaryCard = document.getElementById('summary-card');
+
+  let currentStep = 1;
+
+  const COPY = {
+    bug: {
+      descTitle: "Tell us what's going wrong",
+      descPlaceholder: "What were you trying to do, and what happened instead? Any error messages?",
+      descHelp: "A few sentences is plenty. You can add repro steps and screenshots on the next step.",
+      step2Intro: "Reproducing the bug is the fastest path to a fix. Add what you can — all optional.",
+    },
+    feature: {
+      descTitle: "What would you like us to build?",
+      descPlaceholder: "Describe the capability you want and the situation where you'd use it.",
+      descHelp: "Don't worry about scope or solution — focus on the outcome you need.",
+      step2Intro: "Help us understand the use case. Anything you add sharpens the request.",
+      usecase: "Who would benefit, and when?",
+      success: "What would 'good' look like?",
+    },
+    improvement: {
+      descTitle: "What could work better?",
+      descPlaceholder: "What's frustrating or slow about the current experience?",
+      descHelp: "Walk us through the moment of friction — that's what we need to see.",
+      step2Intro: "A bit more context helps us choose the right fix.",
+      usecase: "When does this friction show up?",
+      success: "What would feel better?",
+    },
   };
 
-  function updateConditionalFields() {
-    const type = typeInput.value;
-    const bugSection = conditionalSections.bug;
-    const featureSection = conditionalSections.feature;
-    const improvementSection = conditionalSections.improvement;
-    deferredFields.hidden = !type;
-
-    bugSection.hidden = type !== 'bug';
-    featureSection.hidden = type !== 'feature';
-    improvementSection.hidden = type !== 'improvement';
-
-    if (!type) {
-      progressNote.textContent = 'Start with the submission type and a short summary. The form will expand with only the fields needed for that request.';
-    } else if (type === 'bug') {
-      progressNote.textContent = 'Bug report selected. Focus on clear repro steps, expected behavior, and the actual failure.';
-      severityLabel.firstChild.textContent = 'Severity / urgency';
-      businessContextLabel.firstChild.textContent = 'Business context';
-      form.elements.businessContext.placeholder = 'Who is affected, what workflow is blocked, and why this matters right now.';
-    } else {
-      progressNote.textContent = type === 'feature'
-        ? 'Feature request selected. Focus on who needs it, the job to be done, and what success looks like.'
-        : 'Improvement selected. Focus on what is frustrating today and how the existing experience should improve.';
-      severityLabel.firstChild.textContent = type === 'feature' ? 'Impact if built' : 'Pain / urgency';
-      businessContextLabel.firstChild.textContent = type === 'feature' ? 'Why this matters' : 'Why this friction matters';
-      form.elements.businessContext.placeholder = type === 'feature'
-        ? 'Who would benefit from this feature, how often the need occurs, and why it matters now.'
-        : 'Who is slowed down by the current experience, what friction they hit, and why it matters now.';
-    }
-
-    environmentLabel.hidden = type !== 'bug';
-
-    form.querySelectorAll('[data-required-types]').forEach((el) => {
-      const allowed = el.dataset.requiredTypes.split(/\s+/);
-      el.required = allowed.includes(type);
+  function setType(type) {
+    typeInput.value = type;
+    typeCards.forEach(c => {
+      const on = c.dataset.type === type;
+      c.classList.toggle('selected', on);
+      c.setAttribute('aria-checked', on ? 'true' : 'false');
     });
+    applyTypeCopy();
+  }
 
-    environmentLabel.querySelector('.field-help')?.remove();
-    if (type === 'bug') {
-      environmentLabel.insertAdjacentHTML('beforeend', '<p class="field-help">Where the bug occurred.</p>');
+  function applyTypeCopy() {
+    const type = typeInput.value;
+    if (!type) return;
+    const c = COPY[type];
+    descriptionLabel.firstChild.textContent = c.descTitle;
+    form.elements.description.placeholder = c.descPlaceholder;
+    descriptionHelp.textContent = c.descHelp;
+    step2Intro.textContent = c.step2Intro;
+    sectionBug.hidden = type !== 'bug';
+    sectionFeatureImp.hidden = type === 'bug';
+    environmentWrap.hidden = type !== 'bug';
+    if (type !== 'bug') {
+      usecaseLabel.firstChild.textContent = c.usecase + ' ';
+      successLabel.firstChild.textContent = c.success + ' ';
     }
+  }
+
+  typeCards.forEach(card => {
+    card.addEventListener('click', () => setType(card.dataset.type));
+  });
+
+  function showStep(n) {
+    currentStep = n;
+    panels.forEach(p => p.hidden = parseInt(p.dataset.panel, 10) !== n);
+    stepperSteps.forEach(s => {
+      const sn = parseInt(s.dataset.step, 10);
+      s.classList.toggle('active', sn === n);
+      s.classList.toggle('done', sn < n);
+    });
+    btnBack.hidden = n === 1;
+    btnNext.hidden = n !== 1;
+    btnSkip.hidden = n !== 1;
+    btnSubmit.hidden = n === 1;
+    btnSubmit.textContent = n === 3 ? 'Send feedback' : 'Send feedback';
+    if (n === 3) renderSummary();
+    formMsg.className = '';
+    formMsg.textContent = '';
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function validateStep1() {
+    if (!typeInput.value) return 'Please choose what kind of feedback this is.';
+    const title = form.elements.title.value.trim();
+    if (!title) return 'Add a one-sentence summary.';
+    const desc = form.elements.description.value.trim();
+    if (!desc) return 'Tell us a little about what is going on.';
+    return '';
+  }
+
+  btnNext.addEventListener('click', () => {
+    const err = validateStep1();
+    if (err) { formMsg.className = 'msg err'; formMsg.textContent = err; return; }
+    showStep(2);
+  });
+  btnSkip.addEventListener('click', () => {
+    const err = validateStep1();
+    if (err) { formMsg.className = 'msg err'; formMsg.textContent = err; return; }
+    showStep(3);
+  });
+  btnBack.addEventListener('click', () => showStep(currentStep === 3 ? 2 : 1));
+
+  const SUMMARY_FIELDS = [
+    ['type', 'Type'],
+    ['title', 'Summary'],
+    ['description', 'Description'],
+    ['reproductionSteps', 'Steps to reproduce'],
+    ['expectedResult', 'Expected'],
+    ['frequency', 'Frequency'],
+    ['blocking', 'Blocking'],
+    ['featureUseCase', 'Use case'],
+    ['successCriteria', 'Success criteria'],
+    ['alternatives', 'Workaround'],
+    ['area', 'Area'],
+    ['environment', 'Environment'],
+    ['references', 'References'],
+    ['name', 'Name'],
+    ['email', 'Email'],
+    ['company', 'Company'],
+    ['role', 'Role'],
+  ];
+
+  function renderSummary() {
+    const data = Object.fromEntries(new FormData(form));
+    const rows = SUMMARY_FIELDS
+      .map(([k, label]) => {
+        const v = (data[k] || '').toString().trim();
+        if (!v) return '';
+        return `<dt>${escape(label)}</dt><dd>${escape(v).replace(/\n/g, '<br>')}</dd>`;
+      })
+      .filter(Boolean)
+      .join('');
+    summaryCard.innerHTML = rows || '<dd>Nothing to show yet.</dd>';
   }
 
   function syncHiddenContext() {
@@ -650,35 +821,21 @@
     form.elements.submittedAt.value = new Date().toISOString();
   }
 
-  function validateConditionalRules(data) {
-    if (!data.type) return 'Please choose what you are submitting.';
-    if (data.contactConsent === 'yes' && !data.email) return 'Email is required if follow-up is allowed.';
-    return '';
-  }
-
-  typeInput.addEventListener('change', updateConditionalFields);
-  updateConditionalFields();
+  showStep(1);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     formMsg.className = '';
     formMsg.textContent = '';
-    syncHiddenContext();
-    if (!form.reportValidity()) return;
 
-    const btn = form.querySelector('button');
-    btn.disabled = true;
-    btn.textContent = 'Submitting…';
+    const err = validateStep1();
+    if (err) { formMsg.className = 'msg err'; formMsg.textContent = err; showStep(1); return; }
+
+    syncHiddenContext();
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Sending…';
 
     const data = Object.fromEntries(new FormData(form));
-    const conditionalError = validateConditionalRules(data);
-    if (conditionalError) {
-      formMsg.className = 'msg err';
-      formMsg.textContent = conditionalError;
-      btn.disabled = false;
-      btn.textContent = 'Submit';
-      return;
-    }
 
     try {
       const res = await fetch(`${ENDPOINT}/api/submit`, {
@@ -691,7 +848,8 @@
         formMsg.className = 'msg ok';
         formMsg.textContent = 'Thanks! Your feedback was submitted. The team will triage it shortly.';
         form.reset();
-        updateConditionalFields();
+        setType('');
+        showStep(1);
       } else {
         formMsg.className = 'msg err';
         formMsg.textContent = out.error || 'Something went wrong.';
@@ -700,8 +858,8 @@
       formMsg.className = 'msg err';
       formMsg.textContent = 'Network error — please try again.';
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Submit';
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = 'Send feedback';
     }
   });
 
