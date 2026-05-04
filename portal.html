@@ -109,6 +109,42 @@
   }
   .site-head-spacer { flex: 1; }
 
+  .search-wrap { position: relative; width: min(360px, 60vw); }
+  .search-input {
+    width: 100%; height: 38px;
+    padding: 0 44px 0 34px;
+    border: 1px solid var(--stone);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--white) 88%, var(--parchment) 12%);
+    font-family: var(--font-body); font-size: 13px; color: var(--ink);
+    outline: none;
+    -webkit-appearance: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    box-shadow: var(--shadow-sm);
+  }
+  .search-input:focus {
+    border-color: var(--stone-dark);
+    box-shadow: 0 0 0 3px rgba(24,24,27,0.08);
+  }
+  .search-input::placeholder { color: var(--ash); }
+  .search-input::-webkit-search-decoration,
+  .search-input::-webkit-search-cancel-button { display: none; }
+  .search-icon {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px; color: var(--ash); pointer-events: none;
+  }
+  .search-kbd {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    font-size: 10.5px; color: var(--ash);
+    background: var(--white); border: 1px solid var(--stone);
+    border-radius: 5px; padding: 1px 5px;
+    font-family: var(--font-body);
+    pointer-events: none;
+  }
+  @media (max-width: 700px) {
+    .search-wrap { display: none; }
+  }
+
   .icon-btn {
     width: 36px; height: 36px;
     border: 1px solid var(--stone);
@@ -672,6 +708,13 @@
       <span class="sub">RM</span>
     </a>
     <div class="site-head-spacer"></div>
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+        <circle cx="7" cy="7" r="5"/><path d="m11 11 3 3"/>
+      </svg>
+      <input type="search" id="search" class="search-input" placeholder="Search the roadmap…" autocomplete="off" spellcheck="false" aria-label="Search the roadmap">
+      <kbd class="search-kbd">⌘K</kbd>
+    </div>
     <button class="icon-btn" id="theme-toggle" aria-label="Toggle theme">
       <svg class="icon-moon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
         <path d="M15 10a6 6 0 1 1-7-7 4.5 4.5 0 0 0 7 7Z"/>
@@ -687,19 +730,19 @@
 <div class="wrap">
 
   <section class="intro">
-    <span class="intro-eyebrow">Product feedback</span>
+    <span class="intro-eyebrow">Product roadmap</span>
     <h1>Tell us what to build <em>next.</em></h1>
     <p>See what we're working on and submit ideas, bugs, and improvements. We triage every submission.</p>
-    <nav class="tabs">
-      <button class="tab active" data-tab="board">Roadmap</button>
-      <button class="tab" data-tab="submit">Submit feedback</button>
-    </nav>
   </section>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="board">Roadmap</button>
+    <button class="tab" data-tab="submit">Submit feedback</button>
+  </nav>
 
   <!-- ─── Board view ─────────────────────────────────── -->
   <section class="view" id="view-board">
     <div class="controls">
-      <input type="search" id="search" placeholder="Search issues…" aria-label="Search">
       <select id="filter-type" aria-label="Filter by type">
         <option value="">All types</option>
         <option value="bug">Bugs</option>
@@ -1102,13 +1145,28 @@
   }
 
   // ─── FILTERS ─────────────────────────────────────────────────────
-  document.getElementById('search').addEventListener('input', (e) => {
+  const searchInput = document.getElementById('search');
+  searchInput.addEventListener('input', (e) => {
     searchTerm = e.target.value;
+    // Typing in the global search jumps back to the roadmap.
+    if (searchTerm) {
+      tabs.forEach(x => x.classList.toggle('active', x.dataset.tab === 'board'));
+      views.forEach(v => v.hidden = v.id !== 'view-board');
+    }
     renderBoard();
   });
   document.getElementById('filter-type').addEventListener('change', (e) => {
     typeFilter = e.target.value;
     renderBoard();
+  });
+
+  // ⌘K / Ctrl+K focuses the search box.
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
   });
 
   // ─── SUBMIT FORM ─────────────────────────────────────────────────
