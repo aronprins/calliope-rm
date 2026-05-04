@@ -46,6 +46,27 @@ if (!$owner || !$repo || !$token) {
     json_out(['error' => 'Server misconfigured'], 500);
 }
 
+// ─── Access control ──────────────────────────────────────────────────
+// Public-board issues are visible to anyone. Non-public issues (still
+// in triage, declined, internally-closed) require a valid HMAC token
+// — the same one /api/status uses — so a stranger faking a
+// `calliope-submissions` localStorage row can't pull team comments
+// they were never meant to see.
+$callerToken = (string)($_GET['token'] ?? '');
+$signKey     = (string)(getenv('STATUS_SIGN_KEY') ?: '');
+
+$validToken = false;
+if ($signKey !== '' && $callerToken !== '') {
+    $expected   = substr(hash_hmac('sha256', (string)$issue, $signKey), 0, 16);
+    $validToken = hash_equals($expected, $callerToken);
+}
+
+if (!$validToken && !issue_is_public($owner, $repo, $issue, $token)) {
+    // Don't disclose existence: anonymous access to a non-public
+    // issue's comments looks the same as the issue not existing at all.
+    json_out(['error' => 'Not found'], 404);
+}
+
 // ─── Cache fast-path ─────────────────────────────────────────────────
 $ttl       = (int)(getenv('COMMENTS_CACHE_TTL') ?: 60);
 $cacheDir  = getenv('COMMENTS_CACHE_DIR') ?: sys_get_temp_dir();
@@ -129,4 +150,27 @@ function json_out(array $data, int $status = 200): void {
     header('Content-Type: application/json');
     echo json_encode($data);
     exit;
+}
+
+function issue_is_public(string $owner, string $repo, int $issue, string $ghToken): bool {
+    $ch = curl_init("https://api.github.com/repos/$owner/$repo/issues/$issue");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_HTTPHEADER     => [
+            "Authorization: Bearer $ghToken",
+            'Accept: application/vnd.github+json',
+            'User-Agent: customer-portal',
+        ],
+    ]);
+    $body = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($code < 200 || $code >= 300) return false;
+    $data = json_decode((string)$body, true);
+    if (!is_array($data)) return false;
+    foreach (($data['labels'] ?? []) as $l) {
+        if (($l['name'] ?? '') === 'public') return true;
+    }
+    return false;
 }

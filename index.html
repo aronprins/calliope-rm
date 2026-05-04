@@ -1998,7 +1998,7 @@
     subModalNote.textContent = note;
 
     subModal.hidden = false;
-    loadSubComments(number);
+    loadSubComments(number, sub.token);
   }
 
   // Cancels any in-flight comments fetch when the user opens a different
@@ -2006,7 +2006,7 @@
   // already-rendered comments for issue B.
   let subCommentsAbort = null;
 
-  async function loadSubComments(number) {
+  async function loadSubComments(number, token) {
     if (subCommentsAbort) subCommentsAbort.abort();
     const ctrl = new AbortController();
     subCommentsAbort = ctrl;
@@ -2014,7 +2014,14 @@
     subCommentsWrap.hidden = false;
     subCommentsList.innerHTML = '<div class="comment-loading">Loading updates…</div>';
     try {
-      const res = await fetch(`${ENDPOINT}/api/comments?issue=${encodeURIComponent(number)}`, { signal: ctrl.signal });
+      // Pass the per-submission HMAC token so /api/comments will return
+      // updates on issues that haven't been made public yet (declined
+      // tickets, items still in triage). Public-roadmap items don't
+      // need it; the server allows tokenless reads when the issue
+      // carries the `public` label.
+      const params = new URLSearchParams({ issue: String(number) });
+      if (token) params.set('token', token);
+      const res = await fetch(`${ENDPOINT}/api/comments?${params.toString()}`, { signal: ctrl.signal });
       if (ctrl.signal.aborted) return;
       if (!res.ok) throw new Error('http ' + res.status);
       const data = await res.json();

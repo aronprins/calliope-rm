@@ -52,6 +52,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST')    { json_out(['error' => 'Method not
 // ─── Honeypot ────────────────────────────────────────────────────────
 if (!empty($_POST['website'])) { json_out(['ok' => true]); }
 
+// ─── Required env: STATUS_SIGN_KEY ──────────────────────────────────
+// Without this the submission would land in GitHub but the customer's
+// localStorage row would never get a token, leaving them unable to
+// see live status (declined / closed / triage) for the rest of that
+// device's life. Fail fast instead of silently mis-configuring data.
+if (!getenv('STATUS_SIGN_KEY')) {
+    error_log('submit.php: STATUS_SIGN_KEY not configured');
+    json_out(['error' => 'Server misconfigured'], 500);
+}
+
 // ─── Parse + validate ────────────────────────────────────────────────
 $ticket = parse_submission($_POST);
 $err = validate_submission($ticket);
@@ -83,13 +93,10 @@ if ($gh === null) {
 
 // Issue a short HMAC token tied to this issue number. The client
 // stores it next to the number in localStorage and passes it to
-// /api/status so the read endpoint can verify the caller actually
-// submitted this issue and isn't just enumerating.
-$token = '';
-$signKey = getenv('STATUS_SIGN_KEY');
-if ($signKey) {
-    $token = substr(hash_hmac('sha256', (string)$gh['number'], $signKey), 0, 16);
-}
+// /api/status and /api/comments so those endpoints can verify the
+// caller actually submitted this issue and isn't just enumerating.
+$signKey = (string)getenv('STATUS_SIGN_KEY');
+$token   = substr(hash_hmac('sha256', (string)$gh['number'], $signKey), 0, 16);
 
 json_out(['ok' => true, 'number' => $gh['number'], 'token' => $token]);
 
