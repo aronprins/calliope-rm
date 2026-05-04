@@ -26,7 +26,7 @@ No database. No auth system. No admin panel. Your team works in GitHub like norm
   ┌──────────────┐         ┌──────────────────┐         ┌──────────────────┐
   │  Customer    │  HTTPS  │  Backend proxy   │   API   │  GitHub Issues   │
   │  (browser)   │ ──────▶ │  (Worker or PHP) │ ──────▶ │  (private repo)  │
-  │  portal.html │ ◀────── │                  │ ◀────── │                  │
+  │  index.html  │ ◀────── │                  │ ◀────── │                  │
   └──────────────┘         └──────────────────┘         └──────────────────┘
         ▲                          │
         │ token never               │ holds GITHUB_TOKEN
@@ -65,7 +65,7 @@ The PHP path is the one to choose if you want screenshots embedded in your issue
 
 ## The submission form
 
-`portal.html` ships with a 3-step submission flow optimized for response rate:
+`index.html` ships with a 3-step submission flow optimized for response rate:
 
 1. **The basics** — type (bug / feature / improvement), one-sentence summary, freeform description, **submitter name and email**, and optional screenshots (drag-and-drop, click, or paste from clipboard). Required: type, summary, description, name, email.
 2. **Add detail** *(optional)* — type-specific fields (repro steps and "is this blocking you?" for bugs; use case and success criteria for features/improvements). Routing context (area, environment, links) and "About you" (company, role) live behind disclosure blocks.
@@ -146,13 +146,13 @@ wrangler deploy
 
 ### 4. Configure the frontend
 
-In `portal.html`:
+In `index.html`:
 
 ```js
 const ENDPOINT = 'https://YOUR-WORKER.workers.dev'; // <-- replace
 ```
 
-Upload `portal.html` to your site.
+Upload `index.html` to your site.
 
 > **Note:** The Worker doesn't currently handle image uploads. Submitting a form with attachments will succeed but the images will be ignored. Use the PHP backend if you need screenshots in your issues.
 
@@ -247,7 +247,7 @@ Reload: `sudo nginx -t && sudo systemctl reload nginx`.
 
 ### 7. Configure the frontend
 
-In `portal.html`:
+In `index.html`:
 
 ```js
 const ENDPOINT = 'https://acme.com'; // your domain — submit.php is at /api/submit
@@ -255,7 +255,7 @@ const ENDPOINT = 'https://acme.com'; // your domain — submit.php is at /api/su
 
 ### 8. Test
 
-1. Open `portal.html` in your browser.
+1. Open `index.html` in your browser.
 2. Submit a test issue with a screenshot. It should appear in your GitHub repo with `from-customer` and `type:*` labels, a structured Markdown body, and the screenshot embedded under a `## Screenshots` heading.
 3. Add `public` and `status:planned` to the issue. After the cache expires, the card appears on the board.
 
@@ -417,7 +417,7 @@ Create matching `status:backlog` labels in GitHub. The frontend's `.kanban` grid
 
 ### Add more types
 
-In `worker.js`, edit `ALLOWED_TYPES`. In `submit.php`, edit the `ALLOWED_TYPES` constant. In `portal.html`, add a matching type card and a `.pill.<newtype>` CSS rule.
+In `worker.js`, edit `ALLOWED_TYPES`. In `submit.php`, edit the `ALLOWED_TYPES` constant. In `index.html`, add a matching type card and a `.pill.<newtype>` CSS rule.
 
 ### Change cache duration
 
@@ -436,7 +436,7 @@ In `submit.php`, edit the constants at the top:
 - `MAX_DIMENSION` — longest edge in pixels (default 2000)
 - `WEBP_QUALITY` — 0–100 (default 82, sweet spot for screenshots)
 
-The matching client-side caps live near the top of the `<script>` in `portal.html` (`MAX_FILES`, `MAX_SIZE`, `ALLOWED_MIMES`). Keep them in sync.
+The matching client-side caps live near the top of the `<script>` in `index.html` (`MAX_FILES`, `MAX_SIZE`, `ALLOWED_MIMES`). Keep them in sync.
 
 ## Security notes
 
@@ -489,4 +489,4 @@ GitHub's `/issues` endpoint returns PRs too; the Worker filters them with `if (!
 ---
 
 **Stack:** GitHub Issues + Labels (data) · Cloudflare Workers *or* nginx + PHP-FPM (proxy) · Vanilla HTML/CSS/JS (frontend)
-**Files:** `portal.html`, `worker.js`, `submit.php`, `board.php`
+**Files:** `index.html`, `worker.js`, `submit.php`, `board.php`

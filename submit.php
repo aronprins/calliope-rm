@@ -272,7 +272,7 @@ function build_issue_body(array $t, array $attachments): string {
     }
 
     // Everything between these markers is hidden from the customer-facing
-    // modal in portal.html but still rendered in GitHub's UI for the team.
+    // modal in index.html but still rendered in GitHub's UI for the team.
     $lines[] = '';
     $lines[] = '<!-- CUSTOMER_HIDE_START -->';
     $lines[] = '## Submitter';

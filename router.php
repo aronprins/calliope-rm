@@ -3,7 +3,7 @@
  * Local-dev router for `php -S`.
  *
  * Routes /api/submit and /api/board to their PHP handlers, serves
- * portal.html at /, and lets the built-in server handle /uploads/*
+ * index.html at /, and lets the built-in server handle /uploads/*
  * directly off disk. Not for production — nginx does this.
  *
  * Usage:
@@ -24,9 +24,9 @@ if ($path === '/api/comments') {
     require __DIR__ . '/comments.php';
     return true;
 }
-if ($path === '/' || $path === '/portal.html') {
+if ($path === '/' || $path === '/index.html') {
     header('Content-Type: text/html; charset=utf-8');
-    readfile(__DIR__ . '/portal.html');
+    readfile(__DIR__ . '/index.html');
     return true;
 }
 
