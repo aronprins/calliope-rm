@@ -390,6 +390,7 @@
     background: var(--green); color: #fff; border-color: var(--green);
   }
   .stepper .sep { flex: 0 0 28px; height: 1px; background: var(--stone); }
+  .stepper[hidden] { display: none; }
 
   .step-panel[hidden] { display: none; }
 
@@ -399,6 +400,7 @@
     border-top: 1px solid var(--stone); padding-top: 20px;
   }
   .form-actions .left, .form-actions .right { display: flex; gap: 8px; align-items: center; }
+  .form-actions[hidden] { display: none; }
 
   button.primary {
     background: var(--ink); color: var(--white);
@@ -567,6 +569,35 @@
     color: white; font-size: 10.5px; font-weight: 500;
     padding: 18px 6px 5px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ─── Success state ──────────────────────────────── */
+  .success-state {
+    text-align: center;
+    padding: 40px 24px 28px;
+  }
+  .success-state[hidden] { display: none; }
+  .success-state .check {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--mint);
+    color: var(--green-soft);
+    border: 1px solid rgba(34,197,94,0.24);
+    margin-bottom: 18px;
+  }
+  .success-state .check svg { width: 26px; height: 26px; }
+  .success-state h2 {
+    font-family: var(--font-body);
+    font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
+    color: var(--ink); margin-bottom: 8px;
+  }
+  .success-state p {
+    color: var(--ash); font-size: 14px; line-height: 1.6;
+    max-width: 460px; margin: 0 auto 22px;
+  }
+  .success-state .actions {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
   }
 
   /* ─── Status messages ────────────────────────────── */
@@ -967,6 +998,21 @@
       <div class="step-panel" data-panel="3" hidden>
         <p class="form-intro">Quick check before sending.</p>
         <dl class="summary-card" id="summary-card"></dl>
+      </div>
+
+      <!-- Step 4 (terminal): success -->
+      <div class="success-state" id="success-state" hidden>
+        <div class="check" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.5l4.5 4.5L19 7.5"/>
+          </svg>
+        </div>
+        <h2>Thanks — got it.</h2>
+        <p id="success-detail">Your feedback is in. We'll triage it within a couple of days. If you left an email, we'll reach out if we have questions or when it ships.</p>
+        <div class="actions">
+          <button type="button" class="secondary" id="btn-view-roadmap">View the roadmap</button>
+          <button type="button" class="primary" id="btn-submit-another">Submit another</button>
+        </div>
       </div>
 
       <!-- Hidden / system fields -->
@@ -1529,6 +1575,43 @@
 
   showStep(1);
 
+  const successState   = document.getElementById('success-state');
+  const successDetail  = document.getElementById('success-detail');
+  const stepperEl      = form.querySelector('.stepper');
+  const formActionsEl  = form.querySelector('.form-actions');
+
+  function showSuccess(issueNumber) {
+    panels.forEach(p => p.hidden = true);
+    stepperEl.hidden = true;
+    formActionsEl.hidden = true;
+    formMsg.className = '';
+    formMsg.textContent = '';
+    successDetail.textContent = issueNumber
+      ? `Submitted as #${issueNumber}. We'll triage it within a couple of days. If you left an email, we'll reach out if we have questions or when it ships.`
+      : `Your feedback is in. We'll triage it within a couple of days. If you left an email, we'll reach out if we have questions or when it ships.`;
+    successState.hidden = false;
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function resetForm() {
+    form.reset();
+    setType('');
+    attachedFiles = [];
+    renderThumbs();
+    successState.hidden = true;
+    stepperEl.hidden = false;
+    formActionsEl.hidden = false;
+    showStep(1);
+  }
+
+  document.getElementById('btn-submit-another').addEventListener('click', resetForm);
+  document.getElementById('btn-view-roadmap').addEventListener('click', () => {
+    resetForm();
+    tabs.forEach(x => x.classList.toggle('active', x.dataset.tab === 'board'));
+    views.forEach(v => v.hidden = v.id !== 'view-board');
+    document.querySelector('.kanban')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     formMsg.className = '';
@@ -1551,13 +1634,7 @@
       });
       const out = await res.json().catch(() => ({}));
       if (res.ok) {
-        formMsg.className = 'msg ok';
-        formMsg.textContent = 'Thanks! Your feedback was submitted. The team will triage it shortly.';
-        form.reset();
-        setType('');
-        attachedFiles = [];
-        renderThumbs();
-        showStep(1);
+        showSuccess(out.number);
       } else {
         formMsg.className = 'msg err';
         formMsg.textContent = out.error || 'Something went wrong.';
