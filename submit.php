@@ -133,7 +133,9 @@ function validate_submission(array $t): string {
     if (!$t['type'])        return 'Please choose what kind of feedback this is.';
     if (!$t['title'])       return 'A short summary is required.';
     if (!$t['description']) return 'Please describe what is going on.';
-    if ($t['email'] && !filter_var($t['email'], FILTER_VALIDATE_EMAIL)) {
+    if (!$t['name'])        return 'Your name is required.';
+    if (!$t['email'])       return 'Your email is required.';
+    if (!filter_var($t['email'], FILTER_VALIDATE_EMAIL)) {
         return 'Please provide a valid email address.';
     }
     return '';
@@ -269,13 +271,19 @@ function build_issue_body(array $t, array $attachments): string {
         $lines[] = $t['references'];
     }
 
+    // Everything between these markers is hidden from the customer-facing
+    // modal in portal.html but still rendered in GitHub's UI for the team.
+    $lines[] = '';
+    $lines[] = '<!-- CUSTOMER_HIDE_START -->';
+    $lines[] = '## Submitter';
+    $lines[] = '- Name: '  . $t['name'];
+    $lines[] = '- Email: ' . $t['email'];
+    if ($t['company']) $lines[] = '- Company: ' . $t['company'];
+    if ($t['role'])    $lines[] = '- Role: '    . $t['role'];
+
     $lines[] = '';
     $lines[] = '## Submission metadata';
     $lines[] = '- Submitted at: ' . $t['submittedAt'];
-    if ($t['name'])        $lines[] = '- Name: '         . $t['name'];
-    if ($t['email'])       $lines[] = '- Email: '        . $t['email'];
-    if ($t['company'])     $lines[] = '- Company: '      . $t['company'];
-    if ($t['role'])        $lines[] = '- Role: '         . $t['role'];
     if ($t['area'])        $lines[] = '- Product area: ' . $t['area'];
     if ($t['environment']) $lines[] = '- Environment: '  . $t['environment'];
     if ($t['pageUrl'])     $lines[] = '- Page URL: '     . $t['pageUrl'];
@@ -283,6 +291,7 @@ function build_issue_body(array $t, array $attachments): string {
     if ($t['language'])    $lines[] = '- Language: '     . $t['language'];
     if ($t['screenSize'])  $lines[] = '- Screen size: '  . $t['screenSize'];
     if ($t['timeZone'])    $lines[] = '- Time zone: '    . $t['timeZone'];
+    $lines[] = '<!-- CUSTOMER_HIDE_END -->';
 
     return implode("\n", $lines);
 }
