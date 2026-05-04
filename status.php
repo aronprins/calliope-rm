@@ -91,49 +91,56 @@ if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
     exit;
 }
 
-// ─── Parallel fetch via curl_multi ───────────────────────────────────
-$mh = curl_multi_init();
-$handles = [];
-foreach ($numbers as $n) {
-    $ch = curl_init("https://api.github.com/repos/$owner/$repo/issues/$n");
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 10,
-        CURLOPT_HTTPHEADER     => [
-            "Authorization: Bearer $token",
-            'Accept: application/vnd.github+json',
-            'User-Agent: customer-portal',
-        ],
-    ]);
-    curl_multi_add_handle($mh, $ch);
-    $handles[$n] = $ch;
-}
+// ─── Fetch each issue's state ────────────────────────────────────────
+// Prefer curl_multi for parallelism, but fall back to sequential
+// curl_exec when the host disables curl_multi_exec (common in shared
+// PHP-FPM hardening profiles). Sequential is bounded — at most
+// STATUS_MAX_NUMBERS requests per call, and the response is cached.
+$useMulti = function_exists('curl_multi_exec') && function_exists('curl_multi_init');
+$results  = []; // number => ['code' => int, 'body' => string|false]
 
-do {
-    $execStatus = curl_multi_exec($mh, $running);
-    if ($running) curl_multi_select($mh, 1.0);
-} while ($running > 0 && $execStatus === CURLM_OK);
-
-if ($execStatus !== CURLM_OK) {
-    // curl_multi failed at the stack level — don't pretend issues are
-    // "unknown" and don't poison the cache. Fail visibly so the client
-    // can retry instead of seeing stale "Awaiting triage" badges.
-    foreach ($handles as $ch) {
+if ($useMulti) {
+    $mh = curl_multi_init();
+    $handles = [];
+    foreach ($numbers as $n) {
+        $ch = github_issue_handle($owner, $repo, $n, $token);
+        curl_multi_add_handle($mh, $ch);
+        $handles[$n] = $ch;
+    }
+    do {
+        $execStatus = curl_multi_exec($mh, $running);
+        if ($running) curl_multi_select($mh, 1.0);
+    } while ($running > 0 && $execStatus === CURLM_OK);
+    if ($execStatus !== CURLM_OK) {
+        foreach ($handles as $ch) { curl_multi_remove_handle($mh, $ch); curl_close($ch); }
+        curl_multi_close($mh);
+        error_log("status.php: curl_multi_exec returned $execStatus");
+        json_out(['error' => 'Could not load status.'], 502);
+    }
+    foreach ($handles as $n => $ch) {
+        $results[$n] = [
+            'code' => curl_getinfo($ch, CURLINFO_HTTP_CODE),
+            'body' => curl_multi_getcontent($ch),
+        ];
         curl_multi_remove_handle($mh, $ch);
         curl_close($ch);
     }
     curl_multi_close($mh);
-    error_log("status.php: curl_multi_exec returned $execStatus");
-    json_out(['error' => 'Could not load status.'], 502);
+} else {
+    foreach ($numbers as $n) {
+        $ch = github_issue_handle($owner, $repo, $n, $token);
+        $body = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $results[$n] = ['code' => $code, 'body' => $body];
+    }
 }
 
 $items = [];
 $hadTransientError = false;
-foreach ($handles as $n => $ch) {
-    $body = curl_multi_getcontent($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_multi_remove_handle($mh, $ch);
-    curl_close($ch);
+foreach ($results as $n => $r) {
+    $code = $r['code'];
+    $body = $r['body'];
 
     if ($code === 404) {
         // Genuine "doesn't exist" — record as unknown and cache. Retries
@@ -167,7 +174,6 @@ foreach ($handles as $n => $ch) {
         'reason' => $data['state_reason'] ?? null,
     ];
 }
-curl_multi_close($mh);
 
 if ($hadTransientError) {
     json_out(['error' => 'Could not load status.'], 502);
@@ -186,4 +192,18 @@ function json_out(array $data, int $status = 200): void {
     header('Content-Type: application/json');
     echo json_encode($data);
     exit;
+}
+
+function github_issue_handle(string $owner, string $repo, int $n, string $token) {
+    $ch = curl_init("https://api.github.com/repos/$owner/$repo/issues/$n");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_HTTPHEADER     => [
+            "Authorization: Bearer $token",
+            'Accept: application/vnd.github+json',
+            'User-Agent: customer-portal',
+        ],
+    ]);
+    return $ch;
 }
