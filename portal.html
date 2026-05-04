@@ -370,6 +370,44 @@
   .modal-close:hover { color: var(--text); }
 
   .loading, .error-state { text-align: center; padding: 3rem; color: var(--muted); }
+
+  /* ─── Modal: comments ───────────────────────────── */
+  .modal-comments { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-soft); }
+  .modal-comments h3 {
+    margin: 0 0 .75rem; font-size: .85rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  }
+  .comment {
+    display: flex; gap: .75rem;
+    padding: .75rem 0;
+    border-top: 1px solid var(--border-soft);
+  }
+  .comment:first-of-type { border-top: 0; }
+  .comment .avatar { flex: 0 0 32px; }
+  .comment .avatar img { width: 32px; height: 32px; border-radius: 50%; display: block; }
+  .comment .body-wrap { flex: 1; min-width: 0; }
+  .comment .head {
+    display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+    font-size: .82rem; color: var(--muted); margin-bottom: .25rem;
+  }
+  .comment .head .author { font-weight: 600; color: var(--text); }
+  .comment .head .team-pill {
+    background: var(--accent-bg); color: var(--accent);
+    padding: 0 .4rem; border-radius: 999px; font-size: .7rem; font-weight: 600;
+  }
+  .comment .body p { margin: 0 0 .5rem; }
+  .comment .body p:last-child { margin-bottom: 0; }
+  .comment-empty { color: var(--muted); font-size: .85rem; padding: .5rem 0; }
+  .comment-loading { color: var(--muted); font-size: .85rem; padding: .5rem 0; }
+
+  /* Render markdown headings inside modal bodies */
+  .modal-body h2, .comment .body h2 { font-size: 1rem; margin: 1rem 0 .25rem; font-weight: 600; }
+  .modal-body h3, .comment .body h3 { font-size: .95rem; margin: .85rem 0 .25rem; font-weight: 600; }
+  .modal-body img, .comment .body img {
+    max-width: 100%; height: auto;
+    border: 1px solid var(--border-soft); border-radius: 6px;
+    margin: .5rem 0;
+  }
 </style>
 </head>
 <body>
@@ -601,12 +639,16 @@
     <h2 id="modal-title"></h2>
     <div class="modal-meta" id="modal-meta"></div>
     <div class="modal-body" id="modal-body"></div>
+    <div class="modal-comments" id="modal-comments" hidden>
+      <h3>Updates from the team</h3>
+      <div id="modal-comments-list"></div>
+    </div>
   </div>
 </div>
 
 <script>
   // ─── CONFIG ──────────────────────────────────────────────────────
-  const ENDPOINT = 'https://YOUR-WORKER.workers.dev'; // <-- replace
+  const ENDPOINT = ''; // same-origin for local dev; set to your Worker/VPS URL in prod
 
   // ─── STATE ───────────────────────────────────────────────────────
   let boardData = null;
@@ -710,8 +752,52 @@
 
     document.getElementById('modal-body').innerHTML = renderBody(issue.body || '_No description provided._');
     modal.hidden = false;
+    loadComments(issue.number);
   }
-  function closeModal() { modal.hidden = true; }
+  function closeModal() {
+    modal.hidden = true;
+    document.getElementById('modal-comments').hidden = true;
+    document.getElementById('modal-comments-list').innerHTML = '';
+  }
+
+  async function loadComments(number) {
+    const wrap = document.getElementById('modal-comments');
+    const list = document.getElementById('modal-comments-list');
+    wrap.hidden = false;
+    list.innerHTML = '<div class="comment-loading">Loading updates…</div>';
+    try {
+      const res = await fetch(`${ENDPOINT}/api/comments?issue=${encodeURIComponent(number)}`);
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      if (!data.comments || data.comments.length === 0) {
+        wrap.hidden = true;
+        return;
+      }
+      list.innerHTML = data.comments.map(commentHTML).join('');
+    } catch {
+      wrap.hidden = true;
+    }
+  }
+
+  function commentHTML(c) {
+    const avatar = c.avatarUrl
+      ? `<img src="${escape(c.avatarUrl)}" alt="" loading="lazy">`
+      : '';
+    const teamPill = c.isTeam ? '<span class="team-pill">Team</span>' : '';
+    return `
+      <div class="comment">
+        <div class="avatar">${avatar}</div>
+        <div class="body-wrap">
+          <div class="head">
+            <span class="author">${escape(c.author)}</span>
+            ${teamPill}
+            <span>${escape(formatDate(c.createdAt))}</span>
+          </div>
+          <div class="body">${renderBody(c.body || '')}</div>
+        </div>
+      </div>
+    `;
+  }
 
   // ─── FILTERS ─────────────────────────────────────────────────────
   document.getElementById('search').addEventListener('input', (e) => {
@@ -1018,13 +1104,38 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function renderBody(text) {
-    let html = escape(text);
-    html = html
+    // Strip HTML comments (e.g. <!-- internal-only --> blocks) before escaping.
+    const stripped = String(text).replace(/<!--[\s\S]*?-->/g, '');
+
+    // Group into blocks: each heading line is its own block; consecutive
+    // non-blank non-heading lines form a paragraph block.
+    const lines = stripped.split('\n');
+    const blocks = [];
+    let para = [];
+    const flush = () => { if (para.length) { blocks.push({ kind: 'p', text: para.join('\n') }); para = []; } };
+    for (const line of lines) {
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
+      if (h) { flush(); blocks.push({ kind: 'h', level: h[1].length, text: h[2] }); }
+      else if (line.trim() === '') flush();
+      else para.push(line);
+    }
+    flush();
+
+    const inline = (s) => escape(s)
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
-      .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-    return html.split(/\n\n+/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+      .replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_, alt, url) =>
+        `<img src="${url}" alt="${alt}" loading="lazy">`)
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, t, url) =>
+        `<a href="${url}" target="_blank" rel="noopener">${t}</a>`)
+      .replace(/(^|[\s>])(https?:\/\/[^\s<]+)/g, (_, lead, url) =>
+        `${lead}<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+
+    return blocks.map(b => b.kind === 'h'
+      ? `<h${b.level}>${inline(b.text)}</h${b.level}>`
+      : `<p>${inline(b.text).replace(/\n/g, '<br>')}</p>`
+    ).join('');
   }
   function formatDate(iso) {
     const d = new Date(iso);

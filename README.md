@@ -38,6 +38,7 @@ No database. No auth system. No admin panel. Your team works in GitHub like norm
 | --- | --- | --- |
 | `/api/submit` | POST | Customer submits a new issue (multipart, supports image uploads) |
 | `/api/board` | GET | Returns issues with the `public` label, grouped into kanban columns |
+| `/api/comments?issue=N` | GET | Returns customer-visible comments on issue N (team comments + any comment with the `<!-- public -->` marker) |
 
 **Four label namespaces** do the work:
 
@@ -155,7 +156,7 @@ sudo apt install nginx php-fpm php-gd php-curl
 
 ```bash
 sudo mkdir -p /var/www/calliope
-sudo cp submit.php board.php /var/www/calliope/
+sudo cp submit.php board.php comments.php /var/www/calliope/
 sudo mkdir -p /var/lib/calliope/uploads
 sudo chown -R www-data:www-data /var/lib/calliope/uploads
 ```
@@ -201,6 +202,13 @@ server {
   location = /api/board {
     fastcgi_pass unix:/run/php/php8.2-fpm.sock;
     fastcgi_param SCRIPT_FILENAME /var/www/calliope/board.php;
+    include fastcgi_params;
+  }
+
+  # Comments endpoint
+  location = /api/comments {
+    fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME /var/www/calliope/comments.php;
     include fastcgi_params;
   }
 
@@ -293,6 +301,17 @@ These labels are stripped from card display:
 - Any `type:*` label (rendered as a colored pill instead)
 
 Other labels (e.g., `priority:high`, `area:billing`) **will be shown** as small pills on cards. To hide additional labels, extend the filter list in `worker.js` (`transformIssue` function).
+
+## Public comments
+
+The card modal fetches `/api/comments?issue=N` when opened and renders comments below the body. By default, customers see:
+
+- **All comments from team members** — anyone whose `author_association` on GitHub is `OWNER`, `MEMBER`, or `COLLABORATOR`.
+- **Any comment containing the marker `<!-- public -->`** — useful for surfacing a customer's own follow-up reply, or for a team member commenting from an account without write access.
+
+The marker is stripped from the rendered output, so you can drop it anywhere in the comment body. Internal-only comments from team members can be hidden by wrapping them in `<!-- ... -->` HTML comments — the renderer strips those before display.
+
+Responses are cached per issue for 60 seconds (configurable via `COMMENTS_CACHE_TTL`).
 
 ## Triage workflow
 
@@ -395,7 +414,6 @@ GitHub's `/issues` endpoint returns PRs too; the Worker filters them with `if (!
 
 - **Permalinks:** `?issue=42` opens that card's modal directly. Useful for sharing.
 - **Closed-as-shipped styling:** fade or strike through closed cards in the Shipped column.
-- **Public comments:** surface comments from team members (or those marked with a `public-comment` label) in the modal.
 - **"Me too" upvoting:** post a `+1` reaction via the backend. Tracking just totals needs no storage; tracking *who* voted does.
 - **Changelog feed:** generate an RSS or JSON feed of recently-shipped issues.
 - **GitHub Projects v2 integration:** swap label-driven status for a Project board as the source of truth via the GraphQL API.
