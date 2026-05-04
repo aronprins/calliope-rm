@@ -46,6 +46,14 @@ if (!$signKey) {
     json_out(['error' => 'Server misconfigured'], 500);
 }
 
+$owner = getenv('GITHUB_OWNER');
+$repo  = getenv('GITHUB_REPO');
+$token = getenv('GITHUB_TOKEN');
+if (!$owner || !$repo || !$token) {
+    error_log('status.php: GitHub config missing');
+    json_out(['error' => 'Server misconfigured'], 500);
+}
+
 $raw   = (string)($_GET['numbers'] ?? '');
 $parts = array_filter(array_map('trim', explode(',', $raw)));
 if (count($parts) > STATUS_MAX_NUMBERS) {
@@ -57,7 +65,9 @@ foreach ($parts as $p) {
     if (!preg_match('/^(\d+)\.([a-f0-9]{16})$/', $p, $m)) continue;
     $n        = (int)$m[1];
     $given    = $m[2];
-    $expected = substr(hash_hmac('sha256', (string)$n, $signKey), 0, 16);
+    // HMAC message must be `<owner>/<repo>#<n>` so a key shared across
+    // deployments can't validate cross-repo tokens.
+    $expected = substr(hash_hmac('sha256', "$owner/$repo#$n", $signKey), 0, 16);
     if (hash_equals($expected, $given)) $numbers[] = $n;
 }
 $numbers = array_values(array_unique($numbers));
@@ -66,14 +76,6 @@ if (count($numbers) === 0) {
     header('Content-Type: application/json');
     echo json_encode(['items' => [], 'fetchedAt' => gmdate('c')]);
     exit;
-}
-
-$owner = getenv('GITHUB_OWNER');
-$repo  = getenv('GITHUB_REPO');
-$token = getenv('GITHUB_TOKEN');
-if (!$owner || !$repo || !$token) {
-    error_log('status.php: GitHub config missing');
-    json_out(['error' => 'Server misconfigured'], 500);
 }
 
 // ─── Cache fast-path ─────────────────────────────────────────────────

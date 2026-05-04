@@ -57,7 +57,9 @@ $signKey     = (string)(getenv('STATUS_SIGN_KEY') ?: '');
 
 $validToken = false;
 if ($signKey !== '' && $callerToken !== '') {
-    $expected   = substr(hash_hmac('sha256', (string)$issue, $signKey), 0, 16);
+    // Same construction as submit.php — `<owner>/<repo>#<n>` so a
+    // shared key can't validate tokens across deployments.
+    $expected   = substr(hash_hmac('sha256', "$owner/$repo#$issue", $signKey), 0, 16);
     $validToken = hash_equals($expected, $callerToken);
 }
 

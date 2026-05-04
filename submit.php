@@ -91,12 +91,17 @@ if ($gh === null) {
     json_out(['error' => 'Could not submit. Please try again later.'], 502);
 }
 
-// Issue a short HMAC token tied to this issue number. The client
-// stores it next to the number in localStorage and passes it to
-// /api/status and /api/comments so those endpoints can verify the
-// caller actually submitted this issue and isn't just enumerating.
-$signKey = (string)getenv('STATUS_SIGN_KEY');
-$token   = substr(hash_hmac('sha256', (string)$gh['number'], $signKey), 0, 16);
+// Issue a short HMAC token tied to this issue number AND this
+// owner/repo, so a key shared across deployments (or carried over a
+// repo migration) can't validate tokens against a different repo's
+// issue space. The client stores the token next to the number in
+// localStorage and passes it to /api/status and /api/comments, both
+// of which recompute the HMAC over the same `<owner>/<repo>#<n>`
+// string before allowing access.
+$signKey   = (string)getenv('STATUS_SIGN_KEY');
+$ghOwnerEv = (string)getenv('GITHUB_OWNER');
+$ghRepoEv  = (string)getenv('GITHUB_REPO');
+$token     = substr(hash_hmac('sha256', "$ghOwnerEv/$ghRepoEv#" . $gh['number'], $signKey), 0, 16);
 
 json_out(['ok' => true, 'number' => $gh['number'], 'token' => $token]);
 
