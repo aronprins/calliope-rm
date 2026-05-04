@@ -36,11 +36,13 @@ No database. No auth system. No admin panel. Your team works in GitHub like norm
 | `/api/submit` | POST | Customer submits a new issue |
 | `/api/board` | GET | Returns issues with the `public` label, grouped into kanban columns |
 
-**Three label namespaces** do the work:
+**Five label namespaces** do the work:
 
 - `public` — gates visibility. Without this label, an issue is invisible to customers.
 - `status:*` — defines kanban columns (`status:planned`, `status:in-progress`, `status:shipped`).
 - `type:*` — categorizes issues (`type:bug`, `type:feature`, `type:improvement`).
+- `severity:*` — captures urgency (`severity:low`, `severity:medium`, `severity:high`, `severity:critical`).
+- `area:*` / `env:*` — captures affected area and environment for routing and automation.
 
 ## Prerequisites
 
@@ -64,6 +66,25 @@ In your repo, go to **Issues → Labels → New label** and create:
 | `type:bug` | `#D73A4A` (red) | Bug reports |
 | `type:feature` | `#0969DA` (blue) | Feature requests |
 | `type:improvement` | `#1F883D` (green) | Improvements |
+| `severity:low` | `#BFDADC` (soft teal) | Low urgency |
+| `severity:medium` | `#FBCA04` (yellow) | Medium urgency |
+| `severity:high` | `#D93F0B` (orange) | High urgency |
+| `severity:critical` | `#B60205` (red) | Critical urgency |
+| `area:auth` | `#5319E7` (purple) | Authentication |
+| `area:billing` | `#1D76DB` (blue) | Billing |
+| `area:dashboard` | `#0E8A16` (green) | Dashboard |
+| `area:integrations` | `#006B75` (teal) | Integrations |
+| `area:notifications` | `#C2E0C6` (mint) | Notifications |
+| `area:api` | `#D4C5F9` (lavender) | API |
+| `area:export` | `#F9D0C4` (peach) | Export / reporting |
+| `area:mobile` | `#F7C6C7` (pink) | Mobile |
+| `area:performance` | `#F9D0C4` (peach) | Performance |
+| `area:other` | `#EDEDED` (gray) | Other |
+| `env:production` | `#B60205` (red) | Production |
+| `env:staging` | `#FBCA04` (yellow) | Staging |
+| `env:sandbox` | `#0E8A16` (green) | Sandbox / test |
+| `env:local` | `#5319E7` (purple) | Local / development |
+| `env:unknown` | `#EDEDED` (gray) | Unknown |
 | `from-customer` | `#FBCA04` (yellow) | Auto-applied to submissions |
 
 ### 2. Create a GitHub token
@@ -117,7 +138,7 @@ with your actual Worker URL. Upload `portal.html` to your site (or embed its con
 ### 5. Test it
 
 1. Open `portal.html` in your browser. The roadmap tab should show empty columns.
-2. Submit a test feedback item. It should land in the GitHub repo as a new issue with the `from-customer` label.
+2. Submit a test feedback item. It should land in the GitHub repo as a new issue with `from-customer`, `type:*`, `severity:*`, `area:*`, and `env:*` labels plus a structured Markdown intake body.
 3. In GitHub, add `public` and `status:planned` to the issue. Wait up to 60 seconds (the cache TTL), refresh, and the card should appear.
 
 ## Label reference
@@ -161,16 +182,14 @@ Other labels (e.g., `priority:high`, `area:billing`) **will be shown** as small 
 When a customer submits feedback:
 
 1. A new issue appears in your repo with:
-   - Label: `from-customer`
-   - Optionally: `type:bug` / `type:feature` / `type:improvement` (if customer selected one)
-   - Body footer: submitter name and email (if provided)
+   - Labels: `from-customer`, `type:*`, `severity:*`, `area:*`, `env:*`
+   - A structured intake body with requester details, business context, type-specific evidence, technical context, and hidden machine-readable metadata comments
 
 2. **Triage:**
    - **Spam or duplicate?** Close the issue. It never gets `public`, never appears on the board.
    - **Legitimate?** Add:
      - `public`
      - A `status:*` label
-     - A `type:*` label (if not already set)
      - Any internal labels (`priority:*`, etc.)
 
 3. **Working on it?** Swap `status:planned` for `status:in-progress`. Card moves columns within 60 seconds.

@@ -133,8 +133,15 @@
   /* ─── Submit form ───────────────────────────────── */
   .form-card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 1.5rem; max-width: 640px;
+    border-radius: 8px; padding: 1.5rem; width: 100%; max-width: none;
   }
+  .form-intro { margin: 0 0 1rem; color: var(--muted); font-size: .95rem; }
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .span-12, .span-8, .span-6, .span-4 { grid-column: auto; }
   label { display: block; margin-top: 1rem; font-weight: 600; font-size: .9rem; }
   label:first-child { margin-top: 0; }
   label .opt { font-weight: 400; color: var(--muted); }
@@ -147,6 +154,36 @@
   input:focus, textarea:focus, select:focus {
     outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent;
   }
+  fieldset {
+    margin: 1.25rem 0 0;
+    padding: 1rem;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+  }
+  legend {
+    padding: 0 .35rem;
+    font-size: .85rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .field-help {
+    margin: .35rem 0 0;
+    color: var(--muted);
+    font-size: .82rem;
+    font-weight: 400;
+  }
+  .progress-note {
+    margin: 0 0 1rem;
+    padding: .8rem 1rem;
+    border-radius: 8px;
+    background: var(--accent-bg);
+    color: var(--text);
+    font-size: .92rem;
+  }
+  .deferred-section[hidden] { display: none; }
+  .conditional-section[hidden] { display: none; }
   .hp { position: absolute; left: -9999px; }
   button.primary {
     margin-top: 1.25rem; background: var(--success); color: white;
@@ -217,23 +254,199 @@
   <!-- ─── Submit view ────────────────────────────────── -->
   <section class="view" id="view-submit" hidden>
     <form class="form-card" id="issue-form" novalidate>
-      <label>Name <input name="name" type="text" autocomplete="name"></label>
-      <label>Email <span class="opt">(optional, so we can follow up)</span>
-        <input name="email" type="email" autocomplete="email">
-      </label>
-      <label>Type
-        <select name="type">
-          <option value="">— Select —</option>
-          <option value="bug">Bug</option>
-          <option value="feature">Feature request</option>
-          <option value="improvement">Improvement</option>
-        </select>
-      </label>
-      <label>Title <input name="title" type="text" required maxlength="200"></label>
-      <label>Description
-        <textarea name="description" required maxlength="5000"
-          placeholder="What happened, or what would you like to see? Steps to reproduce help a lot for bugs."></textarea>
-      </label>
+      <p class="form-intro">Capture enough detail for the team and automation to reproduce, diagnose, and resolve the request without a long back-and-forth.</p>
+      <p class="progress-note" id="progress-note">Start with the submission type and a short summary. The form will expand with only the fields needed for that request.</p>
+
+      <fieldset>
+        <legend>Ticket Routing</legend>
+        <div class="form-grid">
+          <label class="span-4">Type
+            <select name="type" required>
+              <option value="">— Select —</option>
+              <option value="bug">Bug</option>
+              <option value="feature">Feature request</option>
+              <option value="improvement">Improvement</option>
+            </select>
+          </label>
+          <label class="span-8">Short summary
+            <input name="title" type="text" required maxlength="200" placeholder="One sentence that describes the problem or request">
+          </label>
+        </div>
+      </fieldset>
+
+      <div id="deferred-fields" class="deferred-section" hidden>
+        <fieldset>
+          <legend>Requester</legend>
+          <div class="form-grid">
+            <label class="span-6">Name
+              <input name="name" type="text" autocomplete="name" required maxlength="100">
+            </label>
+            <label class="span-6">Email <span class="opt">(required if we should contact you)</span>
+              <input name="email" type="email" autocomplete="email" maxlength="200">
+            </label>
+            <label class="span-6">Company <span class="opt">(optional)</span>
+              <input name="company" type="text" autocomplete="organization" maxlength="120">
+            </label>
+            <label class="span-6">Role / team <span class="opt">(optional)</span>
+              <input name="role" type="text" maxlength="120" placeholder="e.g. Support lead, Finance ops, Admin">
+            </label>
+            <label class="span-6">Can we contact you for follow-up?
+              <select name="contactConsent" required>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Routing Context</legend>
+          <div class="form-grid">
+            <label class="span-4">Product area
+              <select name="area" required>
+                <option value="">— Select —</option>
+                <option value="auth">Authentication</option>
+                <option value="billing">Billing</option>
+                <option value="dashboard">Dashboard</option>
+                <option value="integrations">Integrations</option>
+                <option value="notifications">Notifications</option>
+                <option value="api">API</option>
+                <option value="export">Export / reporting</option>
+                <option value="mobile">Mobile</option>
+                <option value="performance">Performance</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label class="span-4" id="severity-label">Severity / urgency
+              <select name="severity" required>
+                <option value="">— Select —</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </label>
+            <label class="span-4 conditional-section" id="environment-label" hidden>Environment
+              <select name="environment" data-required-types="bug">
+                <option value="">— Select —</option>
+                <option value="production">Production</option>
+                <option value="staging">Staging</option>
+                <option value="sandbox">Sandbox / test</option>
+                <option value="local">Local / development</option>
+                <option value="unknown">Not sure</option>
+              </select>
+            </label>
+          </div>
+          <label id="business-context-label">Business context
+          <textarea name="businessContext" required maxlength="1500"
+            placeholder="Who is affected, what workflow is blocked, and why this matters right now."></textarea>
+          <p class="field-help">This helps agents judge priority and choose a resolution path.</p>
+          </label>
+        </fieldset>
+
+        <fieldset class="conditional-section" id="section-bug" hidden>
+          <legend>Bug Evidence</legend>
+          <div class="form-grid">
+            <label class="span-6">What happened?
+              <textarea name="actualResult" data-required-types="bug" maxlength="2000"
+                placeholder="Describe the failure, error message, or incorrect behavior."></textarea>
+            </label>
+            <label class="span-6">What should have happened?
+              <textarea name="expectedResult" data-required-types="bug" maxlength="1500"
+                placeholder="Describe the expected outcome."></textarea>
+            </label>
+            <label class="span-12">Steps to reproduce
+              <textarea name="reproductionSteps" data-required-types="bug" maxlength="2500"
+                placeholder="List the exact steps, inputs, and any timing details needed to reproduce."></textarea>
+            </label>
+            <label class="span-4">How often does it happen?
+              <select name="frequency" data-required-types="bug">
+                <option value="">— Select —</option>
+                <option value="always">Always</option>
+                <option value="often">Often</option>
+                <option value="sometimes">Sometimes</option>
+                <option value="once">Only once</option>
+              </select>
+            </label>
+            <label class="span-4">When did you first notice it?
+              <input name="startedAt" type="text" maxlength="120" placeholder="e.g. After the April release">
+            </label>
+            <label class="span-4">Workaround <span class="opt">(optional)</span>
+              <textarea name="workaround" maxlength="1500"
+                placeholder="Any temporary workaround that reduces impact."></textarea>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="conditional-section" id="section-feature" hidden>
+          <legend>Feature Request Context</legend>
+          <div class="form-grid">
+            <label class="span-12">Who needs this feature?
+              <textarea name="featureUsers" data-required-types="feature" maxlength="1500"
+                placeholder="Describe the user, team, or segment that needs this capability."></textarea>
+            </label>
+            <label class="span-12">What are they trying to do?
+              <textarea name="featureUseCase" data-required-types="feature" maxlength="2000"
+                placeholder="Describe the job to be done and when this need shows up."></textarea>
+            </label>
+            <label class="span-12">Requested capability
+              <textarea name="requestedOutcome" data-required-types="feature" maxlength="2000"
+                placeholder="Describe the feature or capability you want added."></textarea>
+            </label>
+            <label class="span-12">Success criteria
+              <textarea name="successCriteria" data-required-types="feature" maxlength="2000"
+                placeholder="What would success look like if this feature existed?"></textarea>
+            </label>
+            <label class="span-12">Alternatives considered <span class="opt">(optional)</span>
+              <textarea name="alternatives" maxlength="1500"
+                placeholder="Tools, workarounds, or competing approaches you considered."></textarea>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="conditional-section" id="section-improvement" hidden>
+          <legend>Improvement Context</legend>
+          <div class="form-grid">
+            <label class="span-12">What part of the current experience is not working well?
+              <textarea name="currentWorkflow" data-required-types="improvement" maxlength="2000"
+                placeholder="Describe the current workflow, friction, confusion, or inefficiency."></textarea>
+            </label>
+            <label class="span-12">What should change?
+              <textarea name="improvementChange" data-required-types="improvement" maxlength="2000"
+                placeholder="Describe the change that would make the current experience better."></textarea>
+            </label>
+            <label class="span-12">What would improve if this were fixed?
+              <textarea name="successCriteria" data-required-types="improvement" maxlength="2000"
+                placeholder="Describe the measurable improvement or outcome you expect."></textarea>
+            </label>
+            <label class="span-12">Current workaround <span class="opt">(optional)</span>
+              <textarea name="alternatives" maxlength="1500"
+                placeholder="Describe how you work around this today, if at all."></textarea>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Additional Context</legend>
+          <div class="form-grid">
+            <label class="span-6">Links or references <span class="opt">(optional)</span>
+              <textarea name="references" maxlength="1500"
+                placeholder="Paste relevant URLs, record IDs, screenshots links, or related issue numbers."></textarea>
+            </label>
+            <label class="span-6">Additional notes <span class="opt">(optional)</span>
+              <textarea name="additionalNotes" maxlength="1500"
+                placeholder="Anything else a human or agent should know before trying to resolve this."></textarea>
+            </label>
+          </div>
+        </fieldset>
+      </div>
+
+      <input name="pageUrl" type="hidden">
+      <input name="userAgent" type="hidden">
+      <input name="language" type="hidden">
+      <input name="screenSize" type="hidden">
+      <input name="timeZone" type="hidden">
+      <input name="submittedAt" type="hidden">
       <input class="hp" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button type="submit" class="primary">Submit</button>
       <div id="form-msg" role="status" aria-live="polite"></div>
@@ -374,15 +587,99 @@
   // ─── SUBMIT FORM ─────────────────────────────────────────────────
   const form = document.getElementById('issue-form');
   const formMsg = document.getElementById('form-msg');
+  const deferredFields = document.getElementById('deferred-fields');
+  const progressNote = document.getElementById('progress-note');
+  const severityLabel = document.getElementById('severity-label');
+  const environmentLabel = document.getElementById('environment-label');
+  const businessContextLabel = document.getElementById('business-context-label');
+  const typeInput = form.elements.type;
+  const conditionalSections = {
+    bug: document.getElementById('section-bug'),
+    feature: document.getElementById('section-feature'),
+    improvement: document.getElementById('section-improvement'),
+  };
+
+  function updateConditionalFields() {
+    const type = typeInput.value;
+    const bugSection = conditionalSections.bug;
+    const featureSection = conditionalSections.feature;
+    const improvementSection = conditionalSections.improvement;
+    deferredFields.hidden = !type;
+
+    bugSection.hidden = type !== 'bug';
+    featureSection.hidden = type !== 'feature';
+    improvementSection.hidden = type !== 'improvement';
+
+    if (!type) {
+      progressNote.textContent = 'Start with the submission type and a short summary. The form will expand with only the fields needed for that request.';
+    } else if (type === 'bug') {
+      progressNote.textContent = 'Bug report selected. Focus on clear repro steps, expected behavior, and the actual failure.';
+      severityLabel.firstChild.textContent = 'Severity / urgency';
+      businessContextLabel.firstChild.textContent = 'Business context';
+      form.elements.businessContext.placeholder = 'Who is affected, what workflow is blocked, and why this matters right now.';
+    } else {
+      progressNote.textContent = type === 'feature'
+        ? 'Feature request selected. Focus on who needs it, the job to be done, and what success looks like.'
+        : 'Improvement selected. Focus on what is frustrating today and how the existing experience should improve.';
+      severityLabel.firstChild.textContent = type === 'feature' ? 'Impact if built' : 'Pain / urgency';
+      businessContextLabel.firstChild.textContent = type === 'feature' ? 'Why this matters' : 'Why this friction matters';
+      form.elements.businessContext.placeholder = type === 'feature'
+        ? 'Who would benefit from this feature, how often the need occurs, and why it matters now.'
+        : 'Who is slowed down by the current experience, what friction they hit, and why it matters now.';
+    }
+
+    environmentLabel.hidden = type !== 'bug';
+
+    form.querySelectorAll('[data-required-types]').forEach((el) => {
+      const allowed = el.dataset.requiredTypes.split(/\s+/);
+      el.required = allowed.includes(type);
+    });
+
+    environmentLabel.querySelector('.field-help')?.remove();
+    if (type === 'bug') {
+      environmentLabel.insertAdjacentHTML('beforeend', '<p class="field-help">Where the bug occurred.</p>');
+    }
+  }
+
+  function syncHiddenContext() {
+    form.elements.pageUrl.value = window.location.href;
+    form.elements.userAgent.value = navigator.userAgent || '';
+    form.elements.language.value = navigator.language || '';
+    form.elements.screenSize.value = `${window.screen.width}x${window.screen.height}`;
+    form.elements.timeZone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    form.elements.submittedAt.value = new Date().toISOString();
+  }
+
+  function validateConditionalRules(data) {
+    if (!data.type) return 'Please choose what you are submitting.';
+    if (data.contactConsent === 'yes' && !data.email) return 'Email is required if follow-up is allowed.';
+    return '';
+  }
+
+  typeInput.addEventListener('change', updateConditionalFields);
+  updateConditionalFields();
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     formMsg.className = '';
     formMsg.textContent = '';
+    syncHiddenContext();
+    if (!form.reportValidity()) return;
+
     const btn = form.querySelector('button');
     btn.disabled = true;
     btn.textContent = 'Submitting…';
 
     const data = Object.fromEntries(new FormData(form));
+    const conditionalError = validateConditionalRules(data);
+    if (conditionalError) {
+      formMsg.className = 'msg err';
+      formMsg.textContent = conditionalError;
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+      return;
+    }
+
     try {
       const res = await fetch(`${ENDPOINT}/api/submit`, {
         method: 'POST',
@@ -394,6 +691,7 @@
         formMsg.className = 'msg ok';
         formMsg.textContent = 'Thanks! Your feedback was submitted. The team will triage it shortly.';
         form.reset();
+        updateConditionalFields();
       } else {
         formMsg.className = 'msg err';
         formMsg.textContent = out.error || 'Something went wrong.';

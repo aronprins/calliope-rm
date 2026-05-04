@@ -22,6 +22,11 @@ const STATUS_COLUMNS = [
 ];
 
 const ALLOWED_TYPES = ['bug', 'feature', 'improvement'];
+const ALLOWED_AREAS = ['auth', 'billing', 'dashboard', 'integrations', 'notifications', 'api', 'export', 'mobile', 'performance', 'other'];
+const ALLOWED_ENVIRONMENTS = ['production', 'staging', 'sandbox', 'local', 'unknown'];
+const ALLOWED_SEVERITIES = ['low', 'medium', 'high', 'critical'];
+const ALLOWED_FREQUENCIES = ['always', 'often', 'sometimes', 'once'];
+const ALLOWED_CONTACT_CONSENT = ['yes', 'no'];
 
 const ghHeaders = (env) => ({
   'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
@@ -146,26 +151,22 @@ async function handleSubmit(request, env, cors) {
   // Honeypot
   if (data.website) return jsonRes({ ok: true }, 200, cors);
 
-  const title       = (data.title || '').trim();
-  const description = (data.description || '').trim();
-  if (!title || !description) {
-    return jsonRes({ error: 'Title and description are required.' }, 400, cors);
+  const ticket = parseSubmission(data);
+  const validationError = validateSubmission(ticket);
+  if (validationError) {
+    return jsonRes({ error: validationError }, 400, cors);
   }
-  if (title.length > 200 || description.length > 5000) {
-    return jsonRes({ error: 'Input too long.' }, 400, cors);
-  }
-
-  const name  = (data.name  || 'Anonymous').trim().slice(0, 100);
-  const email = (data.email || '').trim().slice(0, 200);
-  const type  = ALLOWED_TYPES.includes(data.type) ? data.type : null;
-
-  const footer = email
-    ? `\n\n---\n*Submitted via customer portal by **${name}** (${email})*`
-    : `\n\n---\n*Submitted via customer portal by **${name}***`;
 
   // Note: we do NOT auto-add 'public'. Team triages first.
-  const labels = ['from-customer'];
-  if (type) labels.push(`type:${type}`);
+  const labels = [
+    'from-customer',
+    `type:${ticket.type}`,
+    `severity:${ticket.severity}`,
+    `area:${ticket.area}`,
+  ];
+  if (ticket.environment) labels.push(`env:${ticket.environment}`);
+
+  const issueBody = buildIssueBody(ticket);
 
   const ghRes = await fetch(
     `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/issues`,
@@ -173,8 +174,8 @@ async function handleSubmit(request, env, cors) {
       method: 'POST',
       headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title,
-        body: description + footer,
+        title: ticket.title,
+        body: issueBody,
         labels,
       }),
     }
@@ -187,4 +188,223 @@ async function handleSubmit(request, env, cors) {
 
   const issue = await ghRes.json();
   return jsonRes({ ok: true, number: issue.number }, 200, cors);
+}
+
+function parseSubmission(data) {
+  return {
+    name: text(data.name, 100),
+    email: text(data.email, 200),
+    company: text(data.company, 120),
+    role: text(data.role, 120),
+    contactConsent: pick(data.contactConsent, ALLOWED_CONTACT_CONSENT),
+    type: pick(data.type, ALLOWED_TYPES),
+    area: pick(data.area, ALLOWED_AREAS),
+    severity: pick(data.severity, ALLOWED_SEVERITIES),
+    environment: pick(data.environment, ALLOWED_ENVIRONMENTS),
+    title: text(data.title, 200),
+    businessContext: text(data.businessContext, 1500),
+    actualResult: text(data.actualResult, 2000),
+    expectedResult: text(data.expectedResult, 1500),
+    reproductionSteps: text(data.reproductionSteps, 2500),
+    frequency: pick(data.frequency, ALLOWED_FREQUENCIES),
+    startedAt: text(data.startedAt, 120),
+    workaround: text(data.workaround, 1500),
+    currentWorkflow: text(data.currentWorkflow, 2000),
+    featureUsers: text(data.featureUsers, 1500),
+    featureUseCase: text(data.featureUseCase, 2000),
+    requestedOutcome: text(data.requestedOutcome, 2000),
+    improvementChange: text(data.improvementChange, 2000),
+    successCriteria: text(data.successCriteria, 2000),
+    alternatives: text(data.alternatives, 1500),
+    references: text(data.references, 1500),
+    additionalNotes: text(data.additionalNotes, 1500),
+    pageUrl: text(data.pageUrl, 500),
+    userAgent: text(data.userAgent, 500),
+    language: text(data.language, 80),
+    screenSize: text(data.screenSize, 80),
+    timeZone: text(data.timeZone, 80),
+    submittedAt: text(data.submittedAt, 80) || new Date().toISOString(),
+  };
+}
+
+function validateSubmission(ticket) {
+  if (!ticket.name) return 'Name is required.';
+  if (!ticket.contactConsent) return 'Contact preference is required.';
+  if (ticket.contactConsent === 'yes' && !ticket.email) return 'Email is required if follow-up is allowed.';
+  if (ticket.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ticket.email)) return 'Please provide a valid email address.';
+  if (!ticket.type) return 'Type is required.';
+  if (!ticket.area) return 'Product area is required.';
+  if (!ticket.severity) return 'Severity is required.';
+  if (!ticket.title) return 'Short summary is required.';
+  if (!ticket.businessContext) return 'Business context is required.';
+
+  if (ticket.type === 'bug') {
+    if (!ticket.environment) return 'Environment is required for bug reports.';
+    if (!ticket.actualResult) return 'What happened is required for bug reports.';
+    if (!ticket.expectedResult) return 'Expected result is required for bug reports.';
+    if (!ticket.reproductionSteps) return 'Steps to reproduce are required for bug reports.';
+    if (!ticket.frequency) return 'Frequency is required for bug reports.';
+  }
+
+  if (ticket.type === 'feature') {
+    if (!ticket.featureUsers) return 'Who needs this feature is required.';
+    if (!ticket.featureUseCase) return 'The use case is required.';
+    if (!ticket.requestedOutcome) return 'Requested outcome is required.';
+    if (!ticket.successCriteria) return 'Success criteria are required.';
+  }
+
+  if (ticket.type === 'improvement') {
+    if (!ticket.currentWorkflow) return 'Current workflow or pain point is required.';
+    if (!ticket.improvementChange) return 'What should change is required.';
+    if (!ticket.successCriteria) return 'What would improve is required.';
+  }
+
+  return '';
+}
+
+function buildIssueBody(ticket) {
+  const lines = [
+    '## Submission',
+    bullet('Source', 'customer-portal'),
+    bullet('Submitted at', ticket.submittedAt),
+    bullet('Requester', ticket.name),
+    bullet('Email', ticket.email || 'Not provided'),
+    bullet('Contact consent', ticket.contactConsent === 'yes' ? 'Yes' : 'No'),
+    bullet('Company', ticket.company || 'Not provided'),
+    bullet('Role', ticket.role || 'Not provided'),
+    bullet('Type', ticket.type),
+    bullet('Product area', ticket.area),
+    bullet('Severity', ticket.severity),
+    bullet('Environment', ticket.environment || 'Not applicable'),
+    '',
+    '## Business Context',
+    ticket.businessContext,
+  ];
+
+  if (ticket.type === 'bug') {
+    lines.push(
+      '',
+      '## Actual Result',
+      ticket.actualResult,
+      '',
+      '## Expected Result',
+      ticket.expectedResult,
+      '',
+      '## Steps To Reproduce',
+      numberedBlock(ticket.reproductionSteps),
+      '',
+      '## Repro Metadata',
+      bullet('Frequency', ticket.frequency),
+      bullet('First noticed', ticket.startedAt || 'Not provided'),
+      bullet('Workaround', ticket.workaround || 'None provided'),
+    );
+  }
+
+  if (ticket.type === 'feature') {
+    lines.push(
+      '',
+      '## Who Needs This',
+      ticket.featureUsers,
+      '',
+      '## Use Case',
+      ticket.featureUseCase,
+      '',
+      '## Requested Capability',
+      ticket.requestedOutcome,
+      '',
+      '## Success Criteria',
+      ticket.successCriteria,
+      '',
+      '## Alternatives Considered',
+      ticket.alternatives || 'None provided',
+    );
+  }
+
+  if (ticket.type === 'improvement') {
+    lines.push(
+      '',
+      '## Current Workflow / Pain Point',
+      ticket.currentWorkflow,
+      '',
+      '## Proposed Improvement',
+      ticket.improvementChange,
+      '',
+      '## Expected Improvement',
+      ticket.successCriteria,
+      '',
+      '## Current Workaround',
+      ticket.alternatives || 'None provided',
+    );
+  }
+
+  lines.push(
+    '',
+    '## References',
+    ticket.references || 'None provided',
+    '',
+    '## Additional Notes',
+    ticket.additionalNotes || 'None provided',
+    '',
+    '## Technical Context',
+    bullet('Page URL', ticket.pageUrl || 'Not captured'),
+    bullet('User agent', ticket.userAgent || 'Not captured'),
+    bullet('Language', ticket.language || 'Not captured'),
+    bullet('Screen size', ticket.screenSize || 'Not captured'),
+    bullet('Time zone', ticket.timeZone || 'Not captured'),
+    '',
+    '## Internal Metadata',
+    '<!--',
+    meta('source', 'customer-portal'),
+    meta('submitted_at', ticket.submittedAt),
+    meta('submitter_name', ticket.name),
+    meta('submitter_email', ticket.email),
+    meta('contact_consent', ticket.contactConsent),
+    meta('company', ticket.company),
+    meta('role', ticket.role),
+    meta('type', ticket.type),
+    meta('area', ticket.area),
+    meta('severity', ticket.severity),
+    meta('environment', ticket.environment),
+    meta('frequency', ticket.frequency),
+    meta('feature_users', ticket.featureUsers),
+    meta('feature_use_case', ticket.featureUseCase),
+    meta('improvement_change', ticket.improvementChange),
+    meta('page_url', ticket.pageUrl),
+    meta('user_agent', ticket.userAgent),
+    meta('language', ticket.language),
+    meta('screen_size', ticket.screenSize),
+    meta('time_zone', ticket.timeZone),
+    '-->',
+  );
+
+  return lines.join('\n');
+}
+
+function numberedBlock(text) {
+  return text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map((line, index) => `${index + 1}. ${line.replace(/^\d+\.\s*/, '')}`)
+    .join('\n');
+}
+
+function bullet(label, value) {
+  return `- ${label}: ${value}`;
+}
+
+function meta(key, value) {
+  return `${key}=${sanitizeMeta(value)}`;
+}
+
+function sanitizeMeta(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function text(value, max) {
+  return String(value || '').trim().slice(0, max);
+}
+
+function pick(value, allowed) {
+  return allowed.includes(value) ? value : '';
 }
