@@ -93,8 +93,17 @@ foreach ($raw as $c) {
     if (!$trusted && !$hasMarker) continue;
 
     if ($hasMarker) {
-        $body = trim(str_replace(PUBLIC_MARKER, '', $body));
+        $body = str_replace(PUBLIC_MARKER, '', $body);
     }
+    // Strip team-only spans and any other HTML comments before exposing
+    // the body to the client — never trust the renderer to do this.
+    $body = preg_replace(
+        '/<!--\s*CUSTOMER_HIDE_START\s*-->[\s\S]*?<!--\s*CUSTOMER_HIDE_END\s*-->/',
+        '',
+        $body
+    ) ?? $body;
+    $body = preg_replace('/<!--[\s\S]*?-->/', '', $body) ?? $body;
+    $body = trim($body);
 
     $comments[] = [
         'id'        => $c['id'] ?? null,

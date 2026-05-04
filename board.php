@@ -142,7 +142,7 @@ function transform_issue(array $issue): array {
     return [
         'number'    => $issue['number'],
         'title'     => $issue['title'] ?? '',
-        'body'      => $issue['body'] ?? '',
+        'body'      => strip_team_only((string)($issue['body'] ?? '')),
         'status'    => $statusLabel ? substr($statusLabel, strlen('status:')) : 'planned',
         'type'      => $typeLabel   ? substr($typeLabel,   strlen('type:'))   : null,
         'labels'    => $visible,
@@ -152,4 +152,19 @@ function transform_issue(array $issue): array {
         'createdAt' => $issue['created_at'] ?? null,
         'updatedAt' => $issue['updated_at'] ?? null,
     ];
+}
+
+/**
+ * Remove team-only sections wrapped in <!-- CUSTOMER_HIDE_START --> ...
+ * <!-- CUSTOMER_HIDE_END --> markers, plus any other HTML comments. Keeps
+ * customer-facing payload free of PII before it ever leaves the server.
+ */
+function strip_team_only(string $body): string {
+    $body = preg_replace(
+        '/<!--\s*CUSTOMER_HIDE_START\s*-->[\s\S]*?<!--\s*CUSTOMER_HIDE_END\s*-->/',
+        '',
+        $body
+    ) ?? $body;
+    $body = preg_replace('/<!--[\s\S]*?-->/', '', $body) ?? $body;
+    return trim($body);
 }
