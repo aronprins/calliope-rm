@@ -21,6 +21,7 @@ No database. No auth system. No admin panel. The portal reads and writes through
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
 - [Future extensions](#future-extensions)
+- [License](#license)
 
 ## How it works
 
@@ -492,5 +493,9 @@ GitHub's `/issues` endpoint returns PRs too; the Worker filters them with `if (!
 
 **Stack:** GitHub Issues + Labels (data) · Cloudflare Workers *or* nginx + PHP-FPM (proxy) · Vanilla HTML/CSS/JS (frontend)
 **Files:** `index.html`, `worker.js`, `submit.php`, `board.php`, `comments.php`
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 *Calliope was the eldest daughter of Zeus and Mnemosyne — goddess of memory — and the patron of epic narrative. Every roadmap is a story your customers want to follow from beginning to end.*
