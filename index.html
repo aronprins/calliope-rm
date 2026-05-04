@@ -286,6 +286,17 @@
   }
   .card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11.5px; color: var(--ash); }
 
+  .card[data-state="closed"] { opacity: 0.78; }
+  .card[data-state="closed"]:hover { opacity: 1; }
+  .card[data-state="closed"] .card-title { color: var(--graphite); }
+  .card[data-state="closed"] .card-title::before {
+    content: "✓";
+    display: inline-block;
+    margin-right: 6px;
+    color: var(--green);
+    font-weight: 700;
+  }
+
   .pill {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 1px 8px; border-radius: 999px;
@@ -601,6 +612,10 @@
     margin-bottom: 18px; align-items: center;
     font-size: 12px; color: var(--ash);
   }
+  .modal-meta-pills {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    flex: 1 1 auto; min-width: 0;
+  }
   .modal-body { font-size: 14px; color: var(--graphite); line-height: 1.7; }
   .modal-body p { margin: 0 0 12px; }
   .modal-body code {
@@ -628,6 +643,22 @@
     transition: color var(--transition), background var(--transition);
   }
   .modal-close:hover { color: var(--ink); background: var(--parchment); }
+
+  .modal-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: auto;
+    padding: 4px 10px;
+    background: var(--white);
+    border: 1px solid var(--stone);
+    border-radius: 999px;
+    font: inherit; font-size: 11.5px; font-weight: 500;
+    color: var(--graphite); cursor: pointer;
+    transition: border-color var(--transition), color var(--transition), background var(--transition);
+  }
+  .modal-link:hover { border-color: var(--stone-dark); color: var(--ink); }
+  .modal-link svg { width: 12px; height: 12px; }
+  .modal-link.is-copied { color: var(--green-soft); border-color: rgba(34,197,94,0.32); background: var(--mint); }
+  .modal-link.is-closed-pill { background: var(--mint); color: var(--green-soft); border-color: rgba(34,197,94,0.24); }
 
   .loading, .error-state { text-align: center; padding: 64px 0; color: var(--ash); font-size: 14px; }
 
@@ -972,7 +1003,17 @@
   <div class="modal">
     <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
     <h2 id="modal-title"></h2>
-    <div class="modal-meta" id="modal-meta"></div>
+    <div class="modal-meta">
+      <div class="modal-meta-pills" id="modal-meta-pills"></div>
+      <button type="button" class="modal-link" id="modal-link" title="Copy link to this issue">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M6.5 9.5 9.5 6.5"/>
+          <path d="M7 4.5h-1A2.5 2.5 0 0 0 3.5 7v0A2.5 2.5 0 0 0 6 9.5h1"/>
+          <path d="M9 11.5h1A2.5 2.5 0 0 0 12.5 9v0A2.5 2.5 0 0 0 10 6.5H9"/>
+        </svg>
+        <span class="modal-link-label">Copy link</span>
+      </button>
+    </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-comments" id="modal-comments" hidden>
       <h3>Updates from the team</h3>
@@ -1029,9 +1070,15 @@
       if (!res.ok) throw new Error('Failed to load');
       boardData = await res.json();
       renderBoard();
+      maybeOpenFromHash();
     } catch (e) {
       boardContent.innerHTML = '<div class="error-state">Could not load roadmap. Please refresh.</div>';
     }
+  }
+
+  function maybeOpenFromHash() {
+    const m = location.hash.match(/^#issue=(\d+)$/);
+    if (m) openModal(parseInt(m[1], 10), { replaceHistory: true });
   }
 
   function renderBoard() {
@@ -1073,15 +1120,13 @@
   function cardHTML(issue) {
     const typeClass = issue.type ? ` ${issue.type}` : '';
     const typePill  = issue.type ? `<span class="pill${typeClass}">${escape(issue.type)}</span>` : '';
-    const upvotes   = issue.upvotes > 0 ? `<span class="upvotes">👍 ${issue.upvotes}</span>` : '';
     const labels    = issue.labels.map(l => `<span class="pill" style="border-color: #${l.color}; color: #${darken(l.color)}">${escape(l.name)}</span>`).join('');
     return `
-      <div class="card" data-number="${issue.number}">
+      <div class="card" data-number="${issue.number}" data-state="${escape(issue.state || 'open')}">
         <div class="card-title">${escape(issue.title)}</div>
         <div class="card-meta">
           ${typePill}
           ${labels}
-          ${upvotes}
         </div>
       </div>
     `;
@@ -1093,28 +1138,81 @@
   modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-  function openModal(number) {
+  let openIssueNumber = null;
+
+  function openModal(number, opts = {}) {
     if (!boardData) return;
     const issue = boardData.columns.flatMap(c => c.issues).find(i => i.number === number);
     if (!issue) return;
 
+    openIssueNumber = number;
+
     document.getElementById('modal-title').textContent = issue.title;
 
-    const typePill = issue.type ? `<span class="pill ${issue.type}">${escape(issue.type)}</span>` : '';
-    const status   = `<span class="pill">${escape(issue.status.replace('-', ' '))}</span>`;
-    const upvotes  = issue.upvotes > 0 ? `<span>👍 ${issue.upvotes}</span>` : '';
-    const date     = `Updated ${formatDate(issue.updatedAt)}`;
-    document.getElementById('modal-meta').innerHTML = `${typePill} ${status} ${upvotes} <span>•</span> <span>${date}</span>`;
+    const typePill   = issue.type ? `<span class="pill ${issue.type}">${escape(issue.type)}</span>` : '';
+    const statusPill = `<span class="pill">${escape(issue.status.replace('-', ' '))}</span>`;
+    const closedPill = issue.state === 'closed' ? '<span class="pill" style="background: var(--mint); color: var(--green-soft); border-color: rgba(34,197,94,0.24);">✓ Closed</span>' : '';
+    const date       = `<span>Updated ${escape(formatDate(issue.updatedAt))}</span>`;
+    document.getElementById('modal-meta-pills').innerHTML = `${typePill} ${statusPill} ${closedPill} <span>•</span> ${date}`;
 
     document.getElementById('modal-body').innerHTML = renderBody(issue.body || '_No description provided._');
     modal.hidden = false;
+
+    // Reset copy-link button to its default state on every open.
+    const link = document.getElementById('modal-link');
+    link.classList.remove('is-copied');
+    link.querySelector('.modal-link-label').textContent = 'Copy link';
+
+    // Sync URL hash so this view is shareable. Use pushState on direct
+    // user clicks so the back button closes the modal; replaceState when
+    // we're restoring from a hash on page load.
+    const hash = `#issue=${number}`;
+    if (location.hash !== hash) {
+      if (opts.replaceHistory) history.replaceState(null, '', hash);
+      else                     history.pushState(null, '', hash);
+    }
+
     loadComments(issue.number);
   }
-  function closeModal() {
+  function closeModal(opts = {}) {
     modal.hidden = true;
     document.getElementById('modal-comments').hidden = true;
     document.getElementById('modal-comments-list').innerHTML = '';
+    openIssueNumber = null;
+    if (!opts.skipHistory && location.hash.startsWith('#issue=')) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
   }
+
+  // Back/forward navigation closes or re-opens the matching modal.
+  window.addEventListener('popstate', () => {
+    const m = location.hash.match(/^#issue=(\d+)$/);
+    if (m) openModal(parseInt(m[1], 10), { replaceHistory: true });
+    else closeModal({ skipHistory: true });
+  });
+
+  // Copy permalink to clipboard.
+  document.getElementById('modal-link').addEventListener('click', async () => {
+    if (!openIssueNumber) return;
+    const url = `${location.origin}${location.pathname}#issue=${openIssueNumber}`;
+    const link = document.getElementById('modal-link');
+    const label = link.querySelector('.modal-link-label');
+    try {
+      await navigator.clipboard.writeText(url);
+      label.textContent = 'Copied';
+      link.classList.add('is-copied');
+      setTimeout(() => {
+        label.textContent = 'Copy link';
+        link.classList.remove('is-copied');
+      }, 1600);
+    } catch {
+      // Fallback: select the URL in a temporary textarea.
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch {}
+      ta.remove();
+    }
+  });
 
   async function loadComments(number) {
     const wrap = document.getElementById('modal-comments');

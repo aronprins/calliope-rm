@@ -20,7 +20,6 @@ No database. No auth system. No admin panel. The portal reads and writes through
 - [Customization](#customization)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
-- [Future extensions](#future-extensions)
 - [License](#license)
 
 ## How it works
@@ -480,14 +479,6 @@ GitHub's `/issues` endpoint returns PRs too; the Worker filters them with `if (!
 
 **`imagewebp(): WebP support not enabled` in PHP error log.**
 `php-gd` was installed without WebP support. On Debian/Ubuntu, `apt install php-gd` includes it by default; on minimal images you may need to recompile or use `php-imagick` as an alternative.
-
-## Future extensions
-
-- **Permalinks:** `?issue=42` opens that card's modal directly. Useful for sharing.
-- **Closed-as-shipped styling:** fade or strike through closed cards in the Shipped column.
-- **"Me too" upvoting:** post a `+1` reaction via the backend. Tracking just totals needs no storage; tracking *who* voted does.
-- **Changelog feed:** generate an RSS or JSON feed of recently-shipped issues.
-- **GitHub Projects v2 integration:** swap label-driven status for a Project board as the source of truth via the GraphQL API.
 
 ---
 
