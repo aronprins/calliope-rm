@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Product feedback</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #f6f8fa;
+    --surface: #ffffff;
+    --border: #d0d7de;
+    --border-soft: #eaeef2;
+    --text: #1f2328;
+    --muted: #57606a;
+    --accent: #0969da;
+    --accent-bg: #ddf4ff;
+    --success: #1f883d;
+    --success-bg: #dafbe1;
+    --warn: #9a6700;
+    --warn-bg: #fff8c5;
+    --danger: #cf222e;
+    --danger-bg: #ffebe9;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  header h1 { margin: 0 0 .25rem; font-size: 1.75rem; }
+  header p { margin: 0; color: var(--muted); }
+
+  .tabs {
+    display: flex; gap: .25rem;
+    margin-top: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    background: none; border: 0; cursor: pointer;
+    padding: .65rem 1rem; font: inherit; font-weight: 600; color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: #fd8c73; }
+
+  .view { margin-top: 1.5rem; }
+  .view[hidden] { display: none; }
+
+  /* ─── Board ─────────────────────────────────────── */
+  .controls {
+    display: flex; gap: .75rem; flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+  }
+  .controls input, .controls select {
+    padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 6px;
+    font: inherit; background: var(--surface);
+  }
+  .controls input { flex: 1; min-width: 200px; }
+  .controls input:focus, .controls select:focus {
+    outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent;
+  }
+
+  .kanban {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+  @media (max-width: 800px) {
+    .kanban { grid-template-columns: 1fr; }
+  }
+
+  .col {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    min-height: 200px;
+  }
+  .col h2 {
+    margin: 0 0 .75rem;
+    font-size: .85rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted);
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .col h2 .count {
+    background: var(--border-soft); color: var(--muted);
+    padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; letter-spacing: 0;
+  }
+  .col[data-key="in-progress"] h2::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .col[data-key="planned"] h2::before     { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .col[data-key="shipped"] h2::before     { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+
+  .cards { display: flex; flex-direction: column; gap: .5rem; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: .75rem;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .card-title { font-weight: 600; font-size: .95rem; margin: 0 0 .4rem; }
+  .card-meta { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; font-size: .8rem; color: var(--muted); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: .25rem;
+    padding: .1rem .5rem; border-radius: 999px;
+    font-size: .72rem; font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .pill.bug         { background: var(--danger-bg);  color: var(--danger);  border-color: transparent; }
+  .pill.feature     { background: var(--accent-bg);  color: var(--accent);  border-color: transparent; }
+  .pill.improvement { background: var(--success-bg); color: var(--success); border-color: transparent; }
+
+  .upvotes { display: inline-flex; align-items: center; gap: .2rem; }
+
+  .empty { color: var(--muted); font-size: .85rem; padding: 1rem 0; text-align: center; }
+
+  /* ─── Submit form ───────────────────────────────── */
+  .form-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.5rem; max-width: 640px;
+  }
+  label { display: block; margin-top: 1rem; font-weight: 600; font-size: .9rem; }
+  label:first-child { margin-top: 0; }
+  label .opt { font-weight: 400; color: var(--muted); }
+  input[type=text], input[type=email], textarea, select {
+    width: 100%; padding: .55rem .75rem; margin-top: .25rem;
+    border: 1px solid var(--border); border-radius: 6px;
+    font: inherit; background: var(--surface);
+  }
+  textarea { min-height: 140px; resize: vertical; }
+  input:focus, textarea:focus, select:focus {
+    outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent;
+  }
+  .hp { position: absolute; left: -9999px; }
+  button.primary {
+    margin-top: 1.25rem; background: var(--success); color: white;
+    border: 0; padding: .6rem 1.2rem; border-radius: 6px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .6; cursor: not-allowed; }
+  .msg { margin-top: 1rem; padding: .65rem .85rem; border-radius: 6px; font-size: .9rem; }
+  .msg.ok  { background: var(--success-bg); color: var(--success); }
+  .msg.err { background: var(--danger-bg);  color: var(--danger); }
+
+  /* ─── Modal ─────────────────────────────────────── */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 4rem 1rem; overflow-y: auto; z-index: 100;
+  }
+  .modal-bg[hidden] { display: none; }
+  .modal {
+    background: var(--surface); border-radius: 8px;
+    max-width: 720px; width: 100%; padding: 1.5rem;
+    box-shadow: 0 10px 40px rgba(0,0,0,.2);
+  }
+  .modal h2 { margin: 0 0 .5rem; font-size: 1.4rem; }
+  .modal-meta { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1rem; align-items: center; font-size: .85rem; color: var(--muted); }
+  .modal-body { font-size: .95rem; }
+  .modal-body p { margin: 0 0 .75rem; }
+  .modal-body code { background: var(--border-soft); padding: .1rem .3rem; border-radius: 3px; font-size: .9em; }
+  .modal-body a { color: var(--accent); }
+  .modal-close {
+    float: right; background: none; border: 0; cursor: pointer;
+    font-size: 1.5rem; line-height: 1; color: var(--muted); padding: 0;
+  }
+  .modal-close:hover { color: var(--text); }
+
+  .loading, .error-state { text-align: center; padding: 3rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <h1>Product feedback</h1>
+    <p>See what we're working on, and tell us what you'd like next.</p>
+    <nav class="tabs">
+      <button class="tab active" data-tab="board">Roadmap</button>
+      <button class="tab" data-tab="submit">Submit feedback</button>
+    </nav>
+  </header>
+
+  <!-- ─── Board view ─────────────────────────────────── -->
+  <section class="view" id="view-board">
+    <div class="controls">
+      <input type="search" id="search" placeholder="Search issues…" aria-label="Search">
+      <select id="filter-type" aria-label="Filter by type">
+        <option value="">All types</option>
+        <option value="bug">Bugs</option>
+        <option value="feature">Features</option>
+        <option value="improvement">Improvements</option>
+      </select>
+    </div>
+    <div id="board-content">
+      <div class="loading">Loading roadmap…</div>
+    </div>
+  </section>
+
+  <!-- ─── Submit view ────────────────────────────────── -->
+  <section class="view" id="view-submit" hidden>
+    <form class="form-card" id="issue-form" novalidate>
+      <label>Name <input name="name" type="text" autocomplete="name"></label>
+      <label>Email <span class="opt">(optional, so we can follow up)</span>
+        <input name="email" type="email" autocomplete="email">
+      </label>
+      <label>Type
+        <select name="type">
+          <option value="">— Select —</option>
+          <option value="bug">Bug</option>
+          <option value="feature">Feature request</option>
+          <option value="improvement">Improvement</option>
+        </select>
+      </label>
+      <label>Title <input name="title" type="text" required maxlength="200"></label>
+      <label>Description
+        <textarea name="description" required maxlength="5000"
+          placeholder="What happened, or what would you like to see? Steps to reproduce help a lot for bugs."></textarea>
+      </label>
+      <input class="hp" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button type="submit" class="primary">Submit</button>
+      <div id="form-msg" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+
+</div>
+
+<!-- ─── Card detail modal ─────────────────────────────── -->
+<div class="modal-bg" id="modal" hidden role="dialog" aria-modal="true">
+  <div class="modal">
+    <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+    <h2 id="modal-title"></h2>
+    <div class="modal-meta" id="modal-meta"></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+  // ─── CONFIG ──────────────────────────────────────────────────────
+  const ENDPOINT = 'https://YOUR-WORKER.workers.dev'; // <-- replace
+
+  // ─── STATE ───────────────────────────────────────────────────────
+  let boardData = null;
+  let searchTerm = '';
+  let typeFilter = '';
+
+  // ─── TAB SWITCHING ───────────────────────────────────────────────
+  const tabs  = document.querySelectorAll('.tab');
+  const views = document.querySelectorAll('.view');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    const target = t.dataset.tab;
+    tabs.forEach(x => x.classList.toggle('active', x === t));
+    views.forEach(v => v.hidden = v.id !== `view-${target}`);
+  }));
+
+  // ─── BOARD ───────────────────────────────────────────────────────
+  const boardContent = document.getElementById('board-content');
+
+  async function loadBoard() {
+    try {
+      const res = await fetch(`${ENDPOINT}/api/board`);
+      if (!res.ok) throw new Error('Failed to load');
+      boardData = await res.json();
+      renderBoard();
+    } catch (e) {
+      boardContent.innerHTML = '<div class="error-state">Could not load roadmap. Please refresh.</div>';
+    }
+  }
+
+  function renderBoard() {
+    if (!boardData) return;
+
+    const term = searchTerm.toLowerCase();
+    const filterCol = (col) => ({
+      ...col,
+      issues: col.issues.filter(i => {
+        if (typeFilter && i.type !== typeFilter) return false;
+        if (term && !i.title.toLowerCase().includes(term)) return false;
+        return true;
+      }),
+    });
+
+    const filtered = boardData.columns.map(filterCol);
+
+    boardContent.innerHTML = `
+      <div class="kanban">
+        ${filtered.map(col => `
+          <div class="col" data-key="${col.key}">
+            <h2>${escape(col.name)} <span class="count">${col.issues.length}</span></h2>
+            <div class="cards">
+              ${col.issues.length === 0
+                ? '<div class="empty">Nothing here yet.</div>'
+                : col.issues.map(cardHTML).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    // Wire up card clicks
+    boardContent.querySelectorAll('.card').forEach(c => {
+      c.addEventListener('click', () => openModal(parseInt(c.dataset.number, 10)));
+    });
+  }
+
+  function cardHTML(issue) {
+    const typeClass = issue.type ? ` ${issue.type}` : '';
+    const typePill  = issue.type ? `<span class="pill${typeClass}">${escape(issue.type)}</span>` : '';
+    const upvotes   = issue.upvotes > 0 ? `<span class="upvotes">👍 ${issue.upvotes}</span>` : '';
+    const labels    = issue.labels.map(l => `<span class="pill" style="border-color: #${l.color}; color: #${darken(l.color)}">${escape(l.name)}</span>`).join('');
+    return `
+      <div class="card" data-number="${issue.number}">
+        <div class="card-title">${escape(issue.title)}</div>
+        <div class="card-meta">
+          ${typePill}
+          ${labels}
+          ${upvotes}
+        </div>
+      </div>
+    `;
+  }
+
+  // ─── MODAL ───────────────────────────────────────────────────────
+  const modal = document.getElementById('modal');
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+  function openModal(number) {
+    if (!boardData) return;
+    const issue = boardData.columns.flatMap(c => c.issues).find(i => i.number === number);
+    if (!issue) return;
+
+    document.getElementById('modal-title').textContent = issue.title;
+
+    const typePill = issue.type ? `<span class="pill ${issue.type}">${escape(issue.type)}</span>` : '';
+    const status   = `<span class="pill">${escape(issue.status.replace('-', ' '))}</span>`;
+    const upvotes  = issue.upvotes > 0 ? `<span>👍 ${issue.upvotes}</span>` : '';
+    const date     = `Updated ${formatDate(issue.updatedAt)}`;
+    document.getElementById('modal-meta').innerHTML = `${typePill} ${status} ${upvotes} <span>•</span> <span>${date}</span>`;
+
+    document.getElementById('modal-body').innerHTML = renderBody(issue.body || '_No description provided._');
+    modal.hidden = false;
+  }
+  function closeModal() { modal.hidden = true; }
+
+  // ─── FILTERS ─────────────────────────────────────────────────────
+  document.getElementById('search').addEventListener('input', (e) => {
+    searchTerm = e.target.value;
+    renderBoard();
+  });
+  document.getElementById('filter-type').addEventListener('change', (e) => {
+    typeFilter = e.target.value;
+    renderBoard();
+  });
+
+  // ─── SUBMIT FORM ─────────────────────────────────────────────────
+  const form = document.getElementById('issue-form');
+  const formMsg = document.getElementById('form-msg');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    formMsg.className = '';
+    formMsg.textContent = '';
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+
+    const data = Object.fromEntries(new FormData(form));
+    try {
+      const res = await fetch(`${ENDPOINT}/api/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (res.ok) {
+        formMsg.className = 'msg ok';
+        formMsg.textContent = 'Thanks! Your feedback was submitted. The team will triage it shortly.';
+        form.reset();
+      } else {
+        formMsg.className = 'msg err';
+        formMsg.textContent = out.error || 'Something went wrong.';
+      }
+    } catch {
+      formMsg.className = 'msg err';
+      formMsg.textContent = 'Network error — please try again.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+    }
+  });
+
+  // ─── HELPERS ─────────────────────────────────────────────────────
+  function escape(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function renderBody(text) {
+    let html = escape(text);
+    html = html
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+      .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    return html.split(/\n\n+/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+  }
+  function formatDate(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  function darken(hex) {
+    // soft darken for label text contrast — quick & dirty
+    const n = parseInt(hex, 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = Math.max(0, r - 80); g = Math.max(0, g - 80); b = Math.max(0, b - 80);
+    return ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+  }
+
+  // ─── GO ──────────────────────────────────────────────────────────
+  loadBoard();
+</script>
+
+</body>
+</html>
