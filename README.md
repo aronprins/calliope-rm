@@ -263,6 +263,11 @@ server {
     try_files $uri $uri/ =404;
   }
 
+  # Block direct access to backend PHP files — only /api/* is public.
+  location ~ ^/(submit|board|comments|status|github_auth)\.php$ {
+    deny all;
+  }
+
   # Submission endpoint
   location = /api/submit {
     fastcgi_pass unix:/run/php/php8.2-fpm.sock;
