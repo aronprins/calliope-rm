@@ -95,7 +95,7 @@ This is **per-device** (clears with browser data, doesn't sync across devices) a
 
 Name and email are required so triage always has a way to follow up — but the data should never appear on the public roadmap. The flow:
 
-- `submit.php` writes a `## Submitter` section (name, email, company, role) and a `## Submission metadata` section (page URL, user agent, language, screen size, time zone) into the GitHub issue body, wrapped in `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` markers.
+- The backend writes submitter details and request metadata into the GitHub issue body, wrapped in `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` markers.
 - **Team view (GitHub):** GitHub's renderer hides the HTML comments themselves but still renders the markdown sections between them. You see the full submitter info in the issue UI, in `gh issue view`, and via the API.
 - **Customer view (`/api/board` and `/api/comments`):** `board.php`, `comments.php`, and the Worker board endpoint strip everything between the markers (and any other HTML comments) **server-side** before returning the JSON. The `body` field on the wire never contains PII — anyone inspecting the network response in browser devtools sees only the public sections.
 - **Defense in depth:** the modal's `renderBody()` also strips the marker block before inserting into the DOM, so even if a body containing markers somehow reached the client (e.g. via a future endpoint that didn't apply the strip), the rendered output would still be clean.
