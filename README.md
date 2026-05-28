@@ -97,7 +97,7 @@ Name and email are required so triage always has a way to follow up — but the 
 
 - `submit.php` writes a `## Submitter` section (name, email, company, role) and a `## Submission metadata` section (page URL, user agent, language, screen size, time zone) into the GitHub issue body, wrapped in `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` markers.
 - **Team view (GitHub):** GitHub's renderer hides the HTML comments themselves but still renders the markdown sections between them. You see the full submitter info in the issue UI, in `gh issue view`, and via the API.
-- **Customer view (`/api/board` and `/api/comments`):** `board.php` and `comments.php` strip everything between the markers (and any other HTML comments) **server-side** before returning the JSON. The `body` field on the wire never contains PII — anyone inspecting the network response in browser devtools sees only the public sections.
+- **Customer view (`/api/board` and `/api/comments`):** `board.php`, `comments.php`, and the Worker board endpoint strip everything between the markers (and any other HTML comments) **server-side** before returning the JSON. The `body` field on the wire never contains PII — anyone inspecting the network response in browser devtools sees only the public sections.
 - **Defense in depth:** the modal's `renderBody()` also strips the marker block before inserting into the DOM, so even if a body containing markers somehow reached the client (e.g. via a future endpoint that didn't apply the strip), the rendered output would still be clean.
 
 To migrate older issues that pre-date this scheme, wrap the submission metadata section in markers via `gh issue edit`:
@@ -507,7 +507,7 @@ The matching client-side caps live near the top of the `<script>` in `index.html
 - **Honeypot.** Both backends silently accept (and discard) submissions where the hidden `website` field is filled — catches lazy bots.
 - **Rate-limiting.** For real spam, add [Cloudflare Turnstile](https://www.cloudflare.com/products/turnstile/) (free) — one script tag in the form and a verify call in the backend. nginx's `limit_req_zone` is also a fine first line of defense for the PHP path.
 - **Sanitize what's exposed.** The Worker's `transformIssue` and `board.php`'s `transform_issue` control what the board endpoint returns. Internal labels and comment threads are not exposed by default.
-- **PII never leaves the server in the read APIs.** `board.php` and `comments.php` strip the `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` block from each issue/comment body before returning it. Verify with browser devtools → Network → check the raw `/api/board` response after submitting a test ticket.
+- **PII never leaves the server in the read APIs.** `board.php`, `comments.php`, and `worker.js` strip the `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` block from each issue/comment body before returning it. Verify with browser devtools → Network → check the raw `/api/board` response after submitting a test ticket.
 
 ## Troubleshooting
 

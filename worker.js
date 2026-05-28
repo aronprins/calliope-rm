@@ -147,7 +147,7 @@ function transformIssue(issue) {
   return {
     number:    issue.number,
     title:     issue.title,
-    body:      issue.body || '',
+    body:      stripTeamOnly(issue.body || ''),
     status:    statusLabel ? statusLabel.name.slice('status:'.length) : 'planned',
     type:      typeLabel   ? typeLabel.name.slice('type:'.length)     : null,
     labels:    visibleLabels,
@@ -289,12 +289,6 @@ function buildIssueBody(ticket) {
   const lines = [
     '## Submission',
     bullet('Source', 'customer-portal'),
-    bullet('Submitted at', ticket.submittedAt),
-    bullet('Requester', ticket.name),
-    bullet('Email', ticket.email || 'Not provided'),
-    bullet('Contact consent', ticket.contactConsent === 'yes' ? 'Yes' : 'No'),
-    bullet('Company', ticket.company || 'Not provided'),
-    bullet('Role', ticket.role || 'Not provided'),
     bullet('Type', ticket.type),
     bullet('Product area', ticket.area),
     bullet('Severity', ticket.severity),
@@ -368,15 +362,8 @@ function buildIssueBody(ticket) {
     '## Additional Notes',
     ticket.additionalNotes || 'None provided',
     '',
-    '## Technical Context',
-    bullet('Page URL', ticket.pageUrl || 'Not captured'),
-    bullet('User agent', ticket.userAgent || 'Not captured'),
-    bullet('Language', ticket.language || 'Not captured'),
-    bullet('Screen size', ticket.screenSize || 'Not captured'),
-    bullet('Time zone', ticket.timeZone || 'Not captured'),
-    '',
+    '<!-- CUSTOMER_HIDE_START -->',
     '## Internal Metadata',
-    '<!--',
     meta('source', 'customer-portal'),
     meta('submitted_at', ticket.submittedAt),
     meta('submitter_name', ticket.name),
@@ -397,10 +384,21 @@ function buildIssueBody(ticket) {
     meta('language', ticket.language),
     meta('screen_size', ticket.screenSize),
     meta('time_zone', ticket.timeZone),
-    '-->',
+    '<!-- CUSTOMER_HIDE_END -->',
   );
 
   return lines.join('\n');
+}
+
+function stripTeamOnly(body) {
+  return String(body || '')
+    .replace(/<!--\s*CUSTOMER_HIDE_START\s*-->[\s\S]*?<!--\s*CUSTOMER_HIDE_END\s*-->/g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/^- (Submitted at|Requester|Email|Contact consent|Company|Role): .*$/gm, '')
+    .replace(/\n## Technical Context\n[\s\S]*?(?=\n## |$)/g, '')
+    .replace(/\n?## Internal Metadata\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function numberedBlock(text) {
