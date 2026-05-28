@@ -433,15 +433,23 @@ function pick(value, allowed) {
 }
 
 async function githubApiToken(env) {
-  if (env.GITHUB_APP_ID && env.GITHUB_APP_INSTALLATION_ID && githubAppPrivateKey(env)) {
-    const appToken = await githubAppInstallationToken(env);
-    if (appToken) return appToken;
+  const privateKey = githubAppPrivateKey(env);
+  const hasPrivateKeyConfig = env.GITHUB_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY_B64;
+  const hasAppConfig = env.GITHUB_APP_ID || env.GITHUB_APP_INSTALLATION_ID || hasPrivateKeyConfig;
+
+  if (hasAppConfig) {
+    if (!env.GITHUB_APP_ID || !env.GITHUB_APP_INSTALLATION_ID || !privateKey) {
+      console.error('GitHub auth error: incomplete GitHub App config');
+      return '';
+    }
+
+    return githubAppInstallationToken(env, privateKey);
   }
 
   return env.GITHUB_TOKEN || '';
 }
 
-async function githubAppInstallationToken(env) {
+async function githubAppInstallationToken(env, privateKey) {
   const cacheKey = `${env.GITHUB_APP_ID}:${env.GITHUB_APP_INSTALLATION_ID}`;
   if (
     githubAppTokenCache &&
@@ -451,7 +459,7 @@ async function githubAppInstallationToken(env) {
     return githubAppTokenCache.token;
   }
 
-  const jwt = await githubAppJwt(env.GITHUB_APP_ID, githubAppPrivateKey(env));
+  const jwt = await githubAppJwt(env.GITHUB_APP_ID, privateKey);
   if (!jwt) return '';
 
   const res = await fetch(
@@ -478,10 +486,16 @@ async function githubAppInstallationToken(env) {
     return '';
   }
 
+  const expiresAt = Date.parse(data.expires_at);
+  if (!Number.isFinite(expiresAt)) {
+    console.error('GitHub App token request error: invalid expiration');
+    return '';
+  }
+
   githubAppTokenCache = {
     key: cacheKey,
     token: data.token,
-    expiresAt: Date.parse(data.expires_at),
+    expiresAt,
   };
 
   return data.token;
@@ -515,10 +529,15 @@ async function githubAppJwt(appId, privateKey) {
 }
 
 function githubAppPrivateKey(env) {
-  if (env.GITHUB_APP_PRIVATE_KEY_B64) {
-    return atob(env.GITHUB_APP_PRIVATE_KEY_B64);
+  try {
+    if (env.GITHUB_APP_PRIVATE_KEY_B64) {
+      return atob(env.GITHUB_APP_PRIVATE_KEY_B64.replace(/\s+/g, ''));
+    }
+    return (env.GITHUB_APP_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  } catch (e) {
+    console.error('GitHub auth error: invalid base64 private key');
+    return '';
   }
-  return (env.GITHUB_APP_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 }
 
 function pemToArrayBuffer(pem) {

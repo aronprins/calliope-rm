@@ -16,11 +16,17 @@ declare(strict_types=1);
 function github_api_token(): ?string {
     $appId          = getenv('GITHUB_APP_ID');
     $installationId = getenv('GITHUB_APP_INSTALLATION_ID');
+    $privateKeyEnv  = getenv('GITHUB_APP_PRIVATE_KEY') ?: getenv('GITHUB_APP_PRIVATE_KEY_B64');
     $privateKey     = github_app_private_key();
+    $hasAppConfig    = $appId || $installationId || $privateKeyEnv;
 
-    if ($appId && $installationId && $privateKey) {
-        $appToken = github_app_installation_token((string)$appId, (string)$installationId, $privateKey);
-        if ($appToken !== null) return $appToken;
+    if ($hasAppConfig) {
+        if (!$appId || !$installationId || !$privateKey) {
+            error_log('github_auth.php: incomplete GitHub App config');
+            return null;
+        }
+
+        return github_app_installation_token((string)$appId, (string)$installationId, $privateKey);
     }
 
     $token = getenv('GITHUB_TOKEN');
@@ -30,7 +36,7 @@ function github_api_token(): ?string {
 function github_app_private_key(): ?string {
     $raw = getenv('GITHUB_APP_PRIVATE_KEY_B64');
     if ($raw) {
-        $decoded = base64_decode((string)$raw, true);
+        $decoded = base64_decode(preg_replace('/\s+/', '', (string)$raw) ?? (string)$raw, true);
         if ($decoded !== false && $decoded !== '') return $decoded;
     }
 
@@ -145,6 +151,18 @@ function github_app_write_cached_token(string $cacheFile, array $data): void {
     if (!is_dir($dir)) {
         @mkdir($dir, 0700, true);
     }
-    @file_put_contents($cacheFile, json_encode($data), LOCK_EX);
+
+    $tmp = @tempnam($dir, 'calliope-gh-app-token-');
+    if ($tmp === false) return;
+
+    @chmod($tmp, 0600);
+    if (@file_put_contents($tmp, json_encode($data), LOCK_EX) === false) {
+        @unlink($tmp);
+        return;
+    }
+    if (!@rename($tmp, $cacheFile)) {
+        @unlink($tmp);
+        return;
+    }
     @chmod($cacheFile, 0600);
 }

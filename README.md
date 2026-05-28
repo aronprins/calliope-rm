@@ -242,6 +242,8 @@ On macOS, use `base64 -i calliope-rm.private-key.pem | tr -d '\n'`.
 
 If you keep using PAT auth instead, set `env[GITHUB_TOKEN] = github_pat_...` and omit the three `GITHUB_APP_*` vars.
 
+When any `GITHUB_APP_*` variable is set, Calliope treats GitHub App auth as intentional and will not silently fall back to `GITHUB_TOKEN`. This keeps a broken app setup from accidentally continuing to use an older user PAT.
+
 `STATUS_SIGN_KEY` is required for `/api/status` and the per-submission HMAC token returned by `/api/submit`. Generate with `openssl rand -hex 32` or similar. **Don't** commit it. Rotating it invalidates all currently-saved submission tokens, which downgrades older entries in customers' "Your submissions" lists to silent "Awaiting triage" (the row still shows, just no live status lookup) — non-destructive but noisy, so rotate sparingly.
 
 Reload php-fpm: `sudo systemctl reload php8.2-fpm`.
