@@ -7,10 +7,10 @@
  * system temp directory.
  *
  * Required env vars (set via php-fpm pool config or shell env):
- *   GITHUB_TOKEN     fine-grained PAT, scope: Issues read on the repo
  *   GITHUB_OWNER     "your-org"
  *   GITHUB_REPO      "your-repo"
  *   ALLOWED_ORIGIN   "https://yoursite.com"
+ *   plus either GITHUB_TOKEN or GitHub App env vars (see github_auth.php)
  *
  * Optional:
  *   BOARD_CACHE_TTL  cache lifetime in seconds (default 60)
@@ -25,6 +25,8 @@
  */
 
 declare(strict_types=1);
+
+require_once __DIR__ . '/github_auth.php';
 
 const STATUS_COLUMNS = [
     ['key' => 'planned',     'name' => 'Planned'],
@@ -44,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET')     { json_out(['error' => 'Method not
 
 $owner = getenv('GITHUB_OWNER');
 $repo  = getenv('GITHUB_REPO');
-$token = getenv('GITHUB_TOKEN');
+$token = github_api_token();
 if (!$owner || !$repo || !$token) {
     error_log('board.php: GitHub config missing');
     json_out(['error' => 'Server misconfigured'], 500);

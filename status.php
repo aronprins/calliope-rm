@@ -27,6 +27,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/github_auth.php';
+
 const STATUS_MAX_NUMBERS = 20;
 
 // ─── CORS + method gate ──────────────────────────────────────────────
@@ -48,7 +50,7 @@ if (!$signKey) {
 
 $owner = getenv('GITHUB_OWNER');
 $repo  = getenv('GITHUB_REPO');
-$token = getenv('GITHUB_TOKEN');
+$token = github_api_token();
 if (!$owner || !$repo || !$token) {
     error_log('status.php: GitHub config missing');
     json_out(['error' => 'Server misconfigured'], 500);
