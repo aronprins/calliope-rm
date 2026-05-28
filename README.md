@@ -33,8 +33,8 @@ No database. No auth system. No admin panel. The portal reads and writes through
   │  index.html  │ ◀────── │                  │ ◀────── │                  │
   └──────────────┘         └──────────────────┘         └──────────────────┘
         ▲                          │
-        │ token never               │ holds GITHUB_TOKEN
-        │ leaves server             │ as encrypted env / secret
+        │ credentials never         │ holds GitHub App key
+        │ leave server              │ or PAT as env / secret
 ```
 
 **Two endpoints:**
@@ -95,9 +95,9 @@ This is **per-device** (clears with browser data, doesn't sync across devices) a
 
 Name and email are required so triage always has a way to follow up — but the data should never appear on the public roadmap. The flow:
 
-- `submit.php` writes a `## Submitter` section (name, email, company, role) and a `## Submission metadata` section (page URL, user agent, language, screen size, time zone) into the GitHub issue body, wrapped in `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` markers.
+- The backend writes submitter details and request metadata into the GitHub issue body, wrapped in `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` markers.
 - **Team view (GitHub):** GitHub's renderer hides the HTML comments themselves but still renders the markdown sections between them. You see the full submitter info in the issue UI, in `gh issue view`, and via the API.
-- **Customer view (`/api/board` and `/api/comments`):** `board.php` and `comments.php` strip everything between the markers (and any other HTML comments) **server-side** before returning the JSON. The `body` field on the wire never contains PII — anyone inspecting the network response in browser devtools sees only the public sections.
+- **Customer view (`/api/board` and `/api/comments`):** `board.php`, `comments.php`, and the Worker board endpoint strip everything between the markers (and any other HTML comments) **server-side** before returning the JSON. The `body` field on the wire never contains PII — anyone inspecting the network response in browser devtools sees only the public sections.
 - **Defense in depth:** the modal's `renderBody()` also strips the marker block before inserting into the DOM, so even if a body containing markers somehow reached the client (e.g. via a future endpoint that didn't apply the strip), the rendered output would still be clean.
 
 To migrate older issues that pre-date this scheme, wrap the submission metadata section in markers via `gh issue edit`:
@@ -135,7 +135,18 @@ Use this path if you don't need image uploads.
 
 ### 1. Create the GitHub labels (see [reference](#label-reference))
 
-### 2. Create a fine-grained GitHub token
+### 2. Create GitHub credentials
+
+Recommended: use a GitHub App instead of a PAT. The app mints short-lived installation tokens automatically, so there is no long-lived user token to rotate.
+
+1. **Settings → Developer settings → GitHub Apps → New GitHub App**
+2. Repository permissions: `Issues` → **Read and write**
+3. Subscribe to no events — Calliope only calls the REST API
+4. Create the app, then **Generate a private key**
+5. Install the app on the specific roadmap repo
+6. Note the app ID and installation ID
+
+PAT fallback is still supported:
 
 1. **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**
 2. Repository access: select the specific repo
@@ -152,10 +163,17 @@ wrangler init customer-portal-worker
 cd customer-portal-worker
 cp /path/to/worker.js src/index.js
 
-wrangler secret put GITHUB_TOKEN
 wrangler secret put GITHUB_OWNER     # e.g. "acme-corp"
 wrangler secret put GITHUB_REPO      # e.g. "feedback"
 wrangler secret put ALLOWED_ORIGIN   # e.g. "https://acme.com"
+
+# Recommended: GitHub App auth
+wrangler secret put GITHUB_APP_ID
+wrangler secret put GITHUB_APP_INSTALLATION_ID
+wrangler secret put GITHUB_APP_PRIVATE_KEY
+
+# Legacy fallback: PAT auth
+# wrangler secret put GITHUB_TOKEN
 
 wrangler deploy
 ```
@@ -178,7 +196,7 @@ Use this path if you want image uploads or already host on a VPS.
 
 ### 1. Create the GitHub labels (see [reference](#label-reference))
 
-### 2. Create a fine-grained GitHub token (same as Worker setup, step 2)
+### 2. Create GitHub credentials (same as Worker setup, step 2)
 
 ### 3. Install dependencies on the VPS
 
@@ -193,7 +211,7 @@ sudo apt install nginx php-fpm php-gd php-curl
 
 ```bash
 sudo mkdir -p /var/www/calliope
-sudo cp submit.php board.php comments.php status.php /var/www/calliope/
+sudo cp submit.php board.php comments.php status.php github_auth.php /var/www/calliope/
 sudo mkdir -p /var/lib/calliope/uploads
 sudo chown -R www-data:www-data /var/lib/calliope/uploads
 ```
@@ -203,14 +221,28 @@ sudo chown -R www-data:www-data /var/lib/calliope/uploads
 Edit your php-fpm pool config (e.g. `/etc/php/8.2/fpm/pool.d/www.conf`) and add:
 
 ```ini
-env[GITHUB_TOKEN]     = ghp_your_token_here
-env[GITHUB_OWNER]     = acme-corp
-env[GITHUB_REPO]      = feedback
-env[ALLOWED_ORIGIN]   = https://acme.com
-env[UPLOADS_DIR]      = /var/lib/calliope/uploads
-env[UPLOADS_URL]      = https://acme.com/uploads
-env[STATUS_SIGN_KEY]  = a-long-random-secret-string-rotated-occasionally
+env[GITHUB_OWNER]                = acme-corp
+env[GITHUB_REPO]                 = feedback
+env[GITHUB_APP_ID]               = 123456
+env[GITHUB_APP_INSTALLATION_ID]  = 98765432
+env[GITHUB_APP_PRIVATE_KEY_B64]  = base64-encoded-private-key-pem
+env[ALLOWED_ORIGIN]              = https://acme.com
+env[UPLOADS_DIR]                 = /var/lib/calliope/uploads
+env[UPLOADS_URL]                 = https://acme.com/uploads
+env[STATUS_SIGN_KEY]             = a-long-random-secret-string-rotated-occasionally
 ```
+
+To create `GITHUB_APP_PRIVATE_KEY_B64` from the downloaded `.pem` file:
+
+```bash
+base64 -w0 calliope-rm.private-key.pem
+```
+
+On macOS, use `base64 -i calliope-rm.private-key.pem | tr -d '\n'`.
+
+If you keep using PAT auth instead, set `env[GITHUB_TOKEN] = github_pat_...` and omit the three `GITHUB_APP_*` vars.
+
+When any `GITHUB_APP_*` variable is set, Calliope treats GitHub App auth as intentional and will not silently fall back to `GITHUB_TOKEN`. This keeps a broken app setup from accidentally continuing to use an older user PAT.
 
 `STATUS_SIGN_KEY` is required for `/api/status` and the per-submission HMAC token returned by `/api/submit`. Generate with `openssl rand -hex 32` or similar. **Don't** commit it. Rotating it invalidates all currently-saved submission tokens, which downgrades older entries in customers' "Your submissions" lists to silent "Awaiting triage" (the row still shows, just no live status lookup) — non-destructive but noisy, so rotate sparingly.
 
@@ -466,16 +498,16 @@ The matching client-side caps live near the top of the `<script>` in `index.html
 
 ## Security notes
 
-- **The GitHub token must never appear in client code.** Stored as a Worker secret or php-fpm env var. Don't log it, don't echo it in error responses, don't commit it.
-- **Use fine-grained PATs scoped to a single repo.** Limits blast radius if a token leaks.
-- **Rotate tokens regularly.** 90-day expiration with a calendar reminder.
+- **GitHub credentials must never appear in client code.** Store the GitHub App private key or fallback PAT as a Worker secret or php-fpm env var. Don't log it, don't echo it in error responses, don't commit it.
+- **Prefer GitHub App auth.** Install the app on only the roadmap repo and grant only `Issues: Read and write`. The app private key stays server-side and is used to mint short-lived installation tokens.
+- **If you use a PAT, scope it to a single repo and rotate it regularly.** Some org policies can still block or expire no-expiration PATs.
 - **Image uploads are re-encoded server-side.** GD decoding + WebP re-encoding strips EXIF metadata and neutralizes any payload embedded in the original file. Don't skip this step if you accept user uploads.
 - **Magic-byte mime validation.** `submit.php` uses `finfo` to check actual file content, not the client-supplied `Content-Type`. Clients lie.
 - **Random filenames.** Uploaded images are stored under `<random-token>.webp` so URLs aren't enumerable.
 - **Honeypot.** Both backends silently accept (and discard) submissions where the hidden `website` field is filled — catches lazy bots.
 - **Rate-limiting.** For real spam, add [Cloudflare Turnstile](https://www.cloudflare.com/products/turnstile/) (free) — one script tag in the form and a verify call in the backend. nginx's `limit_req_zone` is also a fine first line of defense for the PHP path.
 - **Sanitize what's exposed.** The Worker's `transformIssue` and `board.php`'s `transform_issue` control what the board endpoint returns. Internal labels and comment threads are not exposed by default.
-- **PII never leaves the server in the read APIs.** `board.php` and `comments.php` strip the `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` block from each issue/comment body before returning it. Verify with browser devtools → Network → check the raw `/api/board` response after submitting a test ticket.
+- **PII never leaves the server in the read APIs.** `board.php`, `comments.php`, and `worker.js` strip the `<!-- CUSTOMER_HIDE_START --> ... <!-- CUSTOMER_HIDE_END -->` block from each issue/comment body before returning it. Verify with browser devtools → Network → check the raw `/api/board` response after submitting a test ticket.
 
 ## Troubleshooting
 
@@ -483,7 +515,7 @@ The matching client-side caps live near the top of the `<script>` in `index.html
 The board response is cached for 60 seconds. Wait, then hard-refresh.
 
 **Form submission returns "Could not submit."**
-- *Worker:* `wrangler tail` for logs. Usually token expired, missing `Issues: Write` scope, or wrong owner/repo.
+- *Worker:* `wrangler tail` for logs. Usually missing GitHub App env vars, an invalid private key, missing `Issues: Write` permission, or wrong owner/repo.
 - *PHP:* check `/var/log/nginx/error.log` and your php-fpm error log. Usually the same root causes, plus `UPLOADS_DIR` permissions.
 
 **"Server upload path not configured."**

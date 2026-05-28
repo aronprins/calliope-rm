@@ -2,10 +2,15 @@
 // Proxies between your site and GitHub. Token never leaves the server.
 //
 // Required Worker secrets (`wrangler secret put <NAME>`):
-//   GITHUB_TOKEN     - fine-grained PAT, scope: Issues read/write on the repo
 //   GITHUB_OWNER     - "your-org"
 //   GITHUB_REPO      - "your-repo"
 //   ALLOWED_ORIGIN   - "https://yoursite.com"
+//   plus either:
+//     GITHUB_TOKEN                     - fine-grained PAT, scope: Issues read/write
+//   or:
+//     GITHUB_APP_ID                    - GitHub App ID
+//     GITHUB_APP_INSTALLATION_ID       - app installation ID
+//     GITHUB_APP_PRIVATE_KEY(_B64)     - app private key, raw PEM or base64-encoded PEM
 //
 // Label conventions (set these up in your repo first):
 //   public                       - required for customer visibility
@@ -28,11 +33,18 @@ const ALLOWED_SEVERITIES = ['low', 'medium', 'high', 'critical'];
 const ALLOWED_FREQUENCIES = ['always', 'often', 'sometimes', 'once'];
 const ALLOWED_CONTACT_CONSENT = ['yes', 'no'];
 
-const ghHeaders = (env) => ({
-  'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
-  'Accept': 'application/vnd.github+json',
-  'User-Agent': 'customer-portal',
-});
+let githubAppTokenCache = null;
+
+async function ghHeaders(env) {
+  const token = await githubApiToken(env);
+  if (!token) return null;
+
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/vnd.github+json',
+    'User-Agent': 'customer-portal',
+  };
+}
 
 export default {
   async fetch(request, env) {
@@ -84,7 +96,13 @@ async function handleBoard(request, env, cors) {
     `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/issues` +
     `?labels=public&state=all&per_page=100&sort=updated&direction=desc`;
 
-  const ghRes = await fetch(apiUrl, { headers: ghHeaders(env) });
+  const headers = await ghHeaders(env);
+  if (!env.GITHUB_OWNER || !env.GITHUB_REPO || !headers) {
+    console.error('GitHub board fetch error: GitHub config missing');
+    return jsonRes({ error: 'Server misconfigured' }, 500, cors);
+  }
+
+  const ghRes = await fetch(apiUrl, { headers });
   if (!ghRes.ok) {
     console.error('GitHub board fetch error:', ghRes.status, await ghRes.text());
     return jsonRes({ error: 'Could not load board.' }, 502, cors);
@@ -129,7 +147,7 @@ function transformIssue(issue) {
   return {
     number:    issue.number,
     title:     issue.title,
-    body:      issue.body || '',
+    body:      stripTeamOnly(issue.body || ''),
     status:    statusLabel ? statusLabel.name.slice('status:'.length) : 'planned',
     type:      typeLabel   ? typeLabel.name.slice('type:'.length)     : null,
     labels:    visibleLabels,
@@ -167,12 +185,17 @@ async function handleSubmit(request, env, cors) {
   if (ticket.environment) labels.push(`env:${ticket.environment}`);
 
   const issueBody = buildIssueBody(ticket);
+  const headers = await ghHeaders(env);
+  if (!env.GITHUB_OWNER || !env.GITHUB_REPO || !headers) {
+    console.error('GitHub submit error: GitHub config missing');
+    return jsonRes({ error: 'Server misconfigured' }, 500, cors);
+  }
 
   const ghRes = await fetch(
     `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/issues`,
     {
       method: 'POST',
-      headers: { ...ghHeaders(env), 'Content-Type': 'application/json' },
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: ticket.title,
         body: issueBody,
@@ -266,12 +289,6 @@ function buildIssueBody(ticket) {
   const lines = [
     '## Submission',
     bullet('Source', 'customer-portal'),
-    bullet('Submitted at', ticket.submittedAt),
-    bullet('Requester', ticket.name),
-    bullet('Email', ticket.email || 'Not provided'),
-    bullet('Contact consent', ticket.contactConsent === 'yes' ? 'Yes' : 'No'),
-    bullet('Company', ticket.company || 'Not provided'),
-    bullet('Role', ticket.role || 'Not provided'),
     bullet('Type', ticket.type),
     bullet('Product area', ticket.area),
     bullet('Severity', ticket.severity),
@@ -345,15 +362,8 @@ function buildIssueBody(ticket) {
     '## Additional Notes',
     ticket.additionalNotes || 'None provided',
     '',
-    '## Technical Context',
-    bullet('Page URL', ticket.pageUrl || 'Not captured'),
-    bullet('User agent', ticket.userAgent || 'Not captured'),
-    bullet('Language', ticket.language || 'Not captured'),
-    bullet('Screen size', ticket.screenSize || 'Not captured'),
-    bullet('Time zone', ticket.timeZone || 'Not captured'),
-    '',
+    '<!-- CUSTOMER_HIDE_START -->',
     '## Internal Metadata',
-    '<!--',
     meta('source', 'customer-portal'),
     meta('submitted_at', ticket.submittedAt),
     meta('submitter_name', ticket.name),
@@ -374,10 +384,21 @@ function buildIssueBody(ticket) {
     meta('language', ticket.language),
     meta('screen_size', ticket.screenSize),
     meta('time_zone', ticket.timeZone),
-    '-->',
+    '<!-- CUSTOMER_HIDE_END -->',
   );
 
   return lines.join('\n');
+}
+
+function stripTeamOnly(body) {
+  return String(body || '')
+    .replace(/<!--\s*CUSTOMER_HIDE_START\s*-->[\s\S]*?<!--\s*CUSTOMER_HIDE_END\s*-->/g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/^- (Submitted at|Requester|Email|Contact consent|Company|Role): .*$/gm, '')
+    .replace(/\n## Technical Context\n[\s\S]*?(?=\n## |$)/g, '')
+    .replace(/\n?## Internal Metadata\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function numberedBlock(text) {
@@ -407,4 +428,188 @@ function text(value, max) {
 
 function pick(value, allowed) {
   return allowed.includes(value) ? value : '';
+}
+
+async function githubApiToken(env) {
+  const privateKey = githubAppPrivateKey(env);
+  const hasPrivateKeyConfig = env.GITHUB_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY_B64;
+  const hasAppConfig = env.GITHUB_APP_ID || env.GITHUB_APP_INSTALLATION_ID || hasPrivateKeyConfig;
+
+  if (hasAppConfig) {
+    if (!env.GITHUB_APP_ID || !env.GITHUB_APP_INSTALLATION_ID || !privateKey) {
+      console.error('GitHub auth error: incomplete GitHub App config');
+      return '';
+    }
+
+    return githubAppInstallationToken(env, privateKey);
+  }
+
+  return env.GITHUB_TOKEN || '';
+}
+
+async function githubAppInstallationToken(env, privateKey) {
+  const cacheKey = `${env.GITHUB_APP_ID}:${env.GITHUB_APP_INSTALLATION_ID}`;
+  if (
+    githubAppTokenCache &&
+    githubAppTokenCache.key === cacheKey &&
+    githubAppTokenCache.expiresAt > Date.now() + 300_000
+  ) {
+    return githubAppTokenCache.token;
+  }
+
+  const jwt = await githubAppJwt(env.GITHUB_APP_ID, privateKey);
+  if (!jwt) return '';
+
+  const res = await fetch(
+    `https://api.github.com/app/installations/${env.GITHUB_APP_INSTALLATION_ID}/access_tokens`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${jwt}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'customer-portal',
+      },
+    }
+  );
+
+  if (!res.ok) {
+    console.error('GitHub App token request error:', res.status, await res.text());
+    return '';
+  }
+
+  const data = await res.json();
+  if (!data.token || !data.expires_at) {
+    console.error('GitHub App token request error: invalid response');
+    return '';
+  }
+
+  const expiresAt = Date.parse(data.expires_at);
+  if (!Number.isFinite(expiresAt)) {
+    console.error('GitHub App token request error: invalid expiration');
+    return '';
+  }
+
+  githubAppTokenCache = {
+    key: cacheKey,
+    token: data.token,
+    expiresAt,
+  };
+
+  return data.token;
+}
+
+async function githubAppJwt(appId, privateKey) {
+  const now = Math.floor(Date.now() / 1000);
+  const signingInput = [
+    base64urlJson({ alg: 'RS256', typ: 'JWT' }),
+    base64urlJson({ iat: now - 60, exp: now + 540, iss: String(appId) }),
+  ].join('.');
+
+  try {
+    const key = await crypto.subtle.importKey(
+      'pkcs8',
+      pemToArrayBuffer(privateKey),
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const signature = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      new TextEncoder().encode(signingInput)
+    );
+    return `${signingInput}.${base64urlBytes(new Uint8Array(signature))}`;
+  } catch (e) {
+    console.error('GitHub App JWT signing error:', e);
+    return '';
+  }
+}
+
+function githubAppPrivateKey(env) {
+  try {
+    if (env.GITHUB_APP_PRIVATE_KEY_B64) {
+      return atob(env.GITHUB_APP_PRIVATE_KEY_B64.replace(/\s+/g, ''));
+    }
+    return (env.GITHUB_APP_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  } catch (e) {
+    console.error('GitHub auth error: invalid base64 private key');
+    return '';
+  }
+}
+
+function pemToArrayBuffer(pem) {
+  const label = pem.match(/-----BEGIN ([^-]+)-----/)?.[1] || '';
+  const b64 = pem
+    .replace(/-----BEGIN [^-]+-----/g, '')
+    .replace(/-----END [^-]+-----/g, '')
+    .replace(/\s+/g, '');
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+
+  const pkcs8 = label === 'RSA PRIVATE KEY' ? pkcs1ToPkcs8(bytes) : bytes;
+  return pkcs8.buffer.slice(pkcs8.byteOffset, pkcs8.byteOffset + pkcs8.byteLength);
+}
+
+function pkcs1ToPkcs8(pkcs1) {
+  // GitHub App keys may download as PKCS#1; WebCrypto imports PKCS#8.
+  return derSequence(
+    new Uint8Array([0x02, 0x01, 0x00]),
+    derSequence(
+      new Uint8Array([0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]),
+      new Uint8Array([0x05, 0x00])
+    ),
+    derWrap(0x04, pkcs1)
+  );
+}
+
+function derSequence(...parts) {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(1 + derLength(totalLength).length + totalLength);
+  out[0] = 0x30;
+  out.set(derLength(totalLength), 1);
+  let offset = 1 + derLength(totalLength).length;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function derWrap(tag, body) {
+  const length = derLength(body.length);
+  const out = new Uint8Array(1 + length.length + body.length);
+  out[0] = tag;
+  out.set(length, 1);
+  out.set(body, 1 + length.length);
+  return out;
+}
+
+function derLength(length) {
+  if (length < 0x80) return new Uint8Array([length]);
+
+  const bytes = [];
+  let n = length;
+  while (n > 0) {
+    bytes.unshift(n & 0xff);
+    n >>= 8;
+  }
+  return new Uint8Array([0x80 | bytes.length, ...bytes]);
+}
+
+function base64urlJson(data) {
+  return base64urlString(JSON.stringify(data));
+}
+
+function base64urlString(data) {
+  return btoa(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64urlBytes(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }

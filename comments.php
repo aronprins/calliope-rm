@@ -22,6 +22,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/github_auth.php';
+
 const PUBLIC_MARKER       = '<!-- public -->';
 const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
@@ -40,7 +42,7 @@ if (!$issue) json_out(['error' => 'Invalid issue number'], 400);
 
 $owner = getenv('GITHUB_OWNER');
 $repo  = getenv('GITHUB_REPO');
-$token = getenv('GITHUB_TOKEN');
+$token = github_api_token();
 if (!$owner || !$repo || !$token) {
     error_log('comments.php: GitHub config missing');
     json_out(['error' => 'Server misconfigured'], 500);

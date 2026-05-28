@@ -7,10 +7,10 @@
  * creates a GitHub issue with embedded image references.
  *
  * Required env vars (set via php-fpm pool config or shell env):
- *   GITHUB_TOKEN     fine-grained PAT, scope: Issues read/write on the repo
  *   GITHUB_OWNER     "your-org"
  *   GITHUB_REPO      "your-repo"
  *   ALLOWED_ORIGIN   "https://yoursite.com"
+ *   plus either GITHUB_TOKEN or GitHub App env vars (see github_auth.php)
  *   UPLOADS_DIR      absolute path on disk, e.g. "/var/lib/calliope/uploads"
  *   UPLOADS_URL      public base URL, e.g. "https://yoursite.com/uploads"
  *
@@ -26,6 +26,8 @@
  */
 
 declare(strict_types=1);
+
+require_once __DIR__ . '/github_auth.php';
 
 // ─── Config ──────────────────────────────────────────────────────────
 const MAX_FILES        = 4;
@@ -319,7 +321,7 @@ function build_issue_body(array $t, array $attachments): string {
 }
 
 function github_create_issue(string $title, string $body, array $labels): ?array {
-    $token = getenv('GITHUB_TOKEN');
+    $token = github_api_token();
     $owner = getenv('GITHUB_OWNER');
     $repo  = getenv('GITHUB_REPO');
     if (!$token || !$owner || !$repo) {
